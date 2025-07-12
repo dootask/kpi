@@ -118,3 +118,13 @@ type EvaluationComment struct {
 	Evaluation KPIEvaluation `json:"evaluation,omitempty" gorm:"foreignKey:EvaluationID"`
 	User       Employee      `json:"user,omitempty" gorm:"foreignKey:UserID"`
 }
+
+// 系统设置模型
+type SystemSetting struct {
+	ID        uint      `json:"id" gorm:"primaryKey"`
+	Key       string    `json:"key" gorm:"unique;not null"`
+	Value     string    `json:"value" gorm:"not null"`
+	Type      string    `json:"type" gorm:"default:string"` // string, boolean, number, json
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}

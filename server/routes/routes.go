@@ -126,5 +126,12 @@ func SetupRoutes(r *gin.RouterGroup) {
 		{
 			downloadRoutes.GET("/exports/:filename", handlers.DownloadFile)
 		}
+
+		// 系统设置（HR权限）
+		settingsRoutes := protected.Group("/settings")
+		{
+			settingsRoutes.GET("", handlers.GetSystemSettings) // 所有用户可以读取设置
+			settingsRoutes.PUT("", handlers.RoleMiddleware("hr"), handlers.UpdateSystemSettings) // 只有HR可以修改设置
+		}
 	}
 }

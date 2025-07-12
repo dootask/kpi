@@ -38,6 +38,7 @@ func InitDB() {
 		&KPIEvaluation{},
 		&KPIScore{},
 		&EvaluationComment{},
+		&SystemSetting{},
 	)
 	if err != nil {
 		log.Fatal("数据库迁移失败:", err)
@@ -125,6 +126,15 @@ func CreateTestData() {
 
 	for _, item := range items {
 		DB.Create(&item)
+	}
+
+	// 创建默认系统设置
+	settings := []SystemSetting{
+		{Key: "allow_registration", Value: "true", Type: "boolean"},
+	}
+
+	for _, setting := range settings {
+		DB.Create(&setting)
 	}
 
 	log.Println("测试数据创建完成")

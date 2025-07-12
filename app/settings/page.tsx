@@ -15,6 +15,7 @@ import {
 } from "lucide-react"
 import { useAuth } from "@/lib/auth-context"
 import { useAppContext } from "@/lib/app-context"
+import { settingsApi } from "@/lib/api"
 
 export default function SettingsPage() {
   const { logout } = useAuth()
@@ -25,29 +26,32 @@ export default function SettingsPage() {
 
   // 初始化设置状态
   useEffect(() => {
-    const initializeSettings = () => {
+    const fetchSettings = async () => {
       try {
-        const savedSetting = localStorage.getItem("allowRegistration")
-        if (savedSetting !== null) {
-          setAllowRegistration(JSON.parse(savedSetting))
-        }
+        setLoading(true)
+        const response = await settingsApi.get()
+        setAllowRegistration(response.data.allow_registration)
       } catch (error) {
         console.error("获取设置失败:", error)
+        setMessage({ type: "error", content: "获取设置失败" })
+      } finally {
+        setLoading(false)
       }
     }
-    initializeSettings()
+    fetchSettings()
   }, [])
 
   // 保存设置
   const handleSaveSettings = async () => {
     setLoading(true)
     try {
-      // 模拟保存设置到本地存储
-      localStorage.setItem("allowRegistration", JSON.stringify(allowRegistration))
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      setMessage({ type: "success", content: "设置保存成功！" })
+      const response = await settingsApi.update({
+        allow_registration: allowRegistration,
+      })
+      setMessage({ type: "success", content: response.message || "设置保存成功！" })
       setTimeout(() => setMessage({ type: "", content: "" }), 3000)
-    } catch {
+    } catch (error) {
+      console.error("保存设置失败:", error)
       setMessage({ type: "error", content: "保存设置失败，请重试。" })
     } finally {
       setLoading(false)

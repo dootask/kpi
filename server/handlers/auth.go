@@ -87,6 +87,15 @@ func Register(c *gin.Context) {
 		return
 	}
 
+	// 检查是否允许注册
+	var allowRegistrationSetting models.SystemSetting
+	if err := models.DB.Where("key = ?", "allow_registration").First(&allowRegistrationSetting).Error; err == nil {
+		if allowRegistrationSetting.Value != "true" {
+			c.JSON(http.StatusForbidden, gin.H{"error": "系统当前不允许用户注册"})
+			return
+		}
+	}
+
 	// 检查邮箱是否已存在
 	var existingUser models.Employee
 	if err := models.DB.Where("email = ?", req.Email).First(&existingUser).Error; err == nil {

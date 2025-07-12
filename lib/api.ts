@@ -181,43 +181,7 @@ export interface ExportResponse {
 
 // 设置相关接口
 export interface SystemSettings {
-  system_name: string
-  system_version: string
-  company_name: string
-  company_logo: string
-  timezone: string
-  language: string
-  date_format: string
-
-  // 评估设置
-  evaluation_auto_create: boolean
-  evaluation_reminder_days: number
-  evaluation_timeout_days: number
-  allow_self_evaluation: boolean
-  require_manager_approval: boolean
-  require_hr_approval: boolean
-  allow_evaluation_comments: boolean
-
-  // 通知设置
-  notification_enabled: boolean
-  email_notifications: boolean
-  system_notifications: boolean
-  reminder_notifications: boolean
-
-  // 安全设置
-  password_min_length: number
-  password_require_uppercase: boolean
-  password_require_lowercase: boolean
-  password_require_numbers: boolean
-  password_require_symbols: boolean
-  session_timeout: number
-  max_login_attempts: number
-
-  // 数据设置
-  data_retention_months: number
-  backup_enabled: boolean
-  backup_frequency: string
-  export_format: string
+  allow_registration: boolean
 }
 
 // 消息类型
@@ -435,6 +399,15 @@ export const authApi = {
     const userInfo = localStorage.getItem("user_info")
     return userInfo ? JSON.parse(userInfo) : null
   },
+}
+
+// 系统设置API
+export const settingsApi = {
+  // 获取系统设置
+  get: (): Promise<{ data: SystemSettings }> => api.get("/settings"),
+  
+  // 更新系统设置
+  update: (data: SystemSettings): Promise<{ data: SystemSettings; message: string }> => api.put("/settings", data),
 }
 
 export default api

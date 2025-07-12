@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { authApi, RegisterRequest, type Department } from "@/lib/api"
+import { authApi, RegisterRequest, type Department, settingsApi } from "@/lib/api"
 import { useAuth } from "@/lib/auth-context"
 import { useAppContext } from "@/lib/app-context"
 import { toast } from "sonner"
@@ -29,14 +29,14 @@ export default function RegisterPage() {
 
   // 检查是否允许注册
   useEffect(() => {
-    const checkRegistrationSettings = () => {
+    const checkRegistrationSettings = async () => {
       try {
-        const savedSetting = localStorage.getItem("allowRegistration")
-        if (savedSetting !== null) {
-          setAllowRegistration(JSON.parse(savedSetting))
-        }
+        const response = await settingsApi.get()
+        setAllowRegistration(response.data.allow_registration)
       } catch (error) {
         console.error("获取注册设置失败:", error)
+        // 如果获取失败，默认允许注册
+        setAllowRegistration(true)
       }
     }
     checkRegistrationSettings()
