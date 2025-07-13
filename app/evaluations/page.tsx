@@ -32,6 +32,7 @@ import {
   employeeApi,
   templateApi,
   commentApi,
+  settingsApi,
   type KPIEvaluation,
   type KPIScore,
   type Employee,
@@ -39,6 +40,8 @@ import {
   type EvaluationComment,
   type PaginatedResponse,
   type EvaluationPaginationParams,
+  type DeadlineRules,
+  type TimeCheckResponse,
 } from "@/lib/api"
 import { useAuth } from "@/lib/auth-context"
 import { useAppContext } from "@/lib/app-context"
@@ -107,6 +110,18 @@ export default function EvaluationsPage() {
     month: new Date().getMonth() + 1,
     quarter: Math.floor(new Date().getMonth() / 3) + 1,
   })
+  
+  // 时间模式相关状态
+  const [timeMode, setTimeMode] = useState<"system" | "custom">("system") // 系统推荐 or 自定义
+  const [timeCheckResult, setTimeCheckResult] = useState<TimeCheckResponse | null>(null)
+  const [, setDeadlineRules] = useState<DeadlineRules | null>(null)
+  const [customDeadlines, setCustomDeadlines] = useState({
+    self_eval_deadline: "",
+    manager_eval_deadline: "",
+    hr_review_deadline: "",
+    final_confirm_deadline: "",
+  })
+  const [isCheckingTime, setIsCheckingTime] = useState(false)
 
   // 获取评估列表
   const fetchEvaluations = useCallback(async () => {
@@ -171,6 +186,45 @@ export default function EvaluationsPage() {
     }
   }
 
+  // 获取截止时间规则
+  const fetchDeadlineRules = async () => {
+    try {
+      const response = await settingsApi.getDeadlineRules()
+      setDeadlineRules(response.data)
+    } catch (error) {
+      console.error("获取截止时间规则失败:", error)
+    }
+  }
+
+  // 检查时间可用性
+  const checkTimeAvailability = async () => {
+    try {
+      setIsCheckingTime(true)
+      const response = await evaluationApi.checkTimeAvailability({
+        period: formData.period,
+        year: formData.year,
+        month: formData.period === "monthly" ? formData.month : undefined,
+        quarter: formData.period === "quarterly" ? formData.quarter : undefined,
+      })
+      setTimeCheckResult(response.data)
+      
+      // 如果系统推荐时间有效，自动设置自定义截止时间
+      if (response.data.is_valid && response.data.recommended_deadlines) {
+        const deadlines = response.data.recommended_deadlines
+        setCustomDeadlines({
+          self_eval_deadline: deadlines.self_eval_deadline?.substring(0, 16) || "",
+          manager_eval_deadline: deadlines.manager_eval_deadline?.substring(0, 16) || "",
+          hr_review_deadline: deadlines.hr_review_deadline?.substring(0, 16) || "",
+          final_confirm_deadline: deadlines.final_confirm_deadline?.substring(0, 16) || "",
+        })
+      }
+    } catch (error) {
+      console.error("检查时间可用性失败:", error)
+    } finally {
+      setIsCheckingTime(false)
+    }
+  }
+
   // 获取评估详情和分数
   const fetchEvaluationScores = async (evaluationId: number) => {
     try {
@@ -188,7 +242,16 @@ export default function EvaluationsPage() {
   useEffect(() => {
     fetchEmployees()
     fetchTemplates()
+    fetchDeadlineRules()
   }, [])
+
+  // 当周期相关的formData发生变化时，检查时间可用性
+  useEffect(() => {
+    if (formData.period && formData.year) {
+      checkTimeAvailability()
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData.period, formData.year, formData.month, formData.quarter])
 
   // 初始化默认Tab
   useEffect(() => {
@@ -228,19 +291,50 @@ export default function EvaluationsPage() {
       return
     }
 
+    // 如果是自定义时间模式，验证截止时间
+    if (timeMode === "custom") {
+      const { self_eval_deadline, manager_eval_deadline, hr_review_deadline, final_confirm_deadline } = customDeadlines
+      if (!self_eval_deadline || !manager_eval_deadline || !hr_review_deadline || !final_confirm_deadline) {
+        Alert("验证失败", "请设置所有截止时间")
+        return
+      }
+    }
+
+    // 检查时间可用性
+    if (!timeCheckResult || !timeCheckResult.is_valid) {
+      const confirmed = await Confirm("时间警告", timeCheckResult?.message || "当前时间设置可能不合适，是否继续？")
+      if (!confirmed) return
+    }
+
     try {
+      // 准备创建评估的数据
+      const baseData = {
+        employee_id: 0, // 将在map中设置
+        template_id: parseInt(formData.template_id),
+        period: formData.period,
+        year: formData.year,
+        month: formData.period === "monthly" ? formData.month : undefined,
+        quarter: formData.period === "quarterly" ? formData.quarter : undefined,
+        status: "pending",
+        total_score: 0,
+        final_comment: "",
+      }
+
+      // 如果是自定义时间模式，添加截止时间
+      if (timeMode === "custom") {
+        Object.assign(baseData, {
+          self_eval_deadline: customDeadlines.self_eval_deadline,
+          manager_eval_deadline: customDeadlines.manager_eval_deadline,
+          hr_review_deadline: customDeadlines.hr_review_deadline,
+          final_confirm_deadline: customDeadlines.final_confirm_deadline,
+        })
+      }
+
       // 为每个选中的员工创建评估
       const promises = formData.employee_ids.map(employeeId =>
         evaluationApi.create({
+          ...baseData,
           employee_id: parseInt(employeeId),
-          template_id: parseInt(formData.template_id),
-          period: formData.period,
-          year: formData.year,
-          month: formData.period === "monthly" ? formData.month : undefined,
-          quarter: formData.period === "quarterly" ? formData.quarter : undefined,
-          status: "pending",
-          total_score: 0,
-          final_comment: "",
         })
       )
 
@@ -255,6 +349,14 @@ export default function EvaluationsPage() {
         year: new Date().getFullYear(),
         month: new Date().getMonth() + 1,
         quarter: Math.floor(new Date().getMonth() / 3) + 1,
+      })
+      setTimeMode("system")
+      setTimeCheckResult(null)
+      setCustomDeadlines({
+        self_eval_deadline: "",
+        manager_eval_deadline: "",
+        hr_review_deadline: "",
+        final_confirm_deadline: "",
       })
 
       // 成功提示
@@ -892,6 +994,99 @@ export default function EvaluationsPage() {
                     </Select>
                   </div>
                 )}
+                
+                {/* 时间模式选择 */}
+                <div className="flex flex-col gap-2">
+                  <Label>截止时间设置</Label>
+                  <Select value={timeMode} onValueChange={(value: "system" | "custom") => setTimeMode(value)}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="system">系统推荐</SelectItem>
+                      <SelectItem value="custom">自定义</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* 系统推荐时间显示 */}
+                {timeMode === "system" && timeCheckResult && (
+                  <div className="bg-muted p-3 rounded-md">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Clock className="h-4 w-4" />
+                      <span className="text-sm font-medium">
+                        系统推荐 ({timeCheckResult.time_mode === "standard" ? "标准模式" : 
+                                   timeCheckResult.time_mode === "compressed" ? "压缩模式" : "紧急模式"})
+                      </span>
+                    </div>
+                    <div className="text-sm text-muted-foreground space-y-1">
+                      <div>可用时间：{timeCheckResult.available_days} 天</div>
+                      {timeCheckResult.recommended_deadlines.self_eval_deadline && (
+                        <div>员工自评截止：{new Date(timeCheckResult.recommended_deadlines.self_eval_deadline).toLocaleDateString()}</div>
+                      )}
+                      {timeCheckResult.recommended_deadlines.manager_eval_deadline && (
+                        <div>主管评分截止：{new Date(timeCheckResult.recommended_deadlines.manager_eval_deadline).toLocaleDateString()}</div>
+                      )}
+                      {timeCheckResult.recommended_deadlines.hr_review_deadline && (
+                        <div>HR审核截止：{new Date(timeCheckResult.recommended_deadlines.hr_review_deadline).toLocaleDateString()}</div>
+                      )}
+                      {timeCheckResult.recommended_deadlines.final_confirm_deadline && (
+                        <div>最终确认截止：{new Date(timeCheckResult.recommended_deadlines.final_confirm_deadline).toLocaleDateString()}</div>
+                      )}
+                    </div>
+                    {!timeCheckResult.is_valid && (
+                      <div className="text-sm text-red-600 mt-2">
+                        ⚠️ {timeCheckResult.message}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* 自定义截止时间输入 */}
+                {timeMode === "custom" && (
+                  <div className="space-y-3">
+                    <div className="text-sm text-muted-foreground">请设置各阶段的截止时间：</div>
+                    <div className="grid grid-cols-1 gap-3">
+                      <div className="flex flex-col gap-2">
+                        <Label htmlFor="self_eval_deadline">员工自评截止时间</Label>
+                        <Input
+                          id="self_eval_deadline"
+                          type="datetime-local"
+                          value={customDeadlines.self_eval_deadline}
+                          onChange={e => setCustomDeadlines(prev => ({ ...prev, self_eval_deadline: e.target.value }))}
+                        />
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <Label htmlFor="manager_eval_deadline">主管评分截止时间</Label>
+                        <Input
+                          id="manager_eval_deadline"
+                          type="datetime-local"
+                          value={customDeadlines.manager_eval_deadline}
+                          onChange={e => setCustomDeadlines(prev => ({ ...prev, manager_eval_deadline: e.target.value }))}
+                        />
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <Label htmlFor="hr_review_deadline">HR审核截止时间</Label>
+                        <Input
+                          id="hr_review_deadline"
+                          type="datetime-local"
+                          value={customDeadlines.hr_review_deadline}
+                          onChange={e => setCustomDeadlines(prev => ({ ...prev, hr_review_deadline: e.target.value }))}
+                        />
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <Label htmlFor="final_confirm_deadline">最终确认截止时间</Label>
+                        <Input
+                          id="final_confirm_deadline"
+                          type="datetime-local"
+                          value={customDeadlines.final_confirm_deadline}
+                          onChange={e => setCustomDeadlines(prev => ({ ...prev, final_confirm_deadline: e.target.value }))}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 sm:space-x-2 sm:gap-0">
                   <Button
                     type="button"
@@ -901,8 +1096,8 @@ export default function EvaluationsPage() {
                   >
                     取消
                   </Button>
-                  <Button type="submit" className="w-full sm:w-auto">
-                    创建
+                  <Button type="submit" className="w-full sm:w-auto" disabled={isCheckingTime}>
+                    {isCheckingTime ? "检查中..." : "创建"}
                   </Button>
                 </div>
               </form>
@@ -1064,13 +1259,14 @@ export default function EvaluationsPage() {
                 <TableHead>周期</TableHead>
                 <TableHead>总分</TableHead>
                 <TableHead>状态</TableHead>
+                <TableHead>截止时间</TableHead>
                 <TableHead className="text-right">操作</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {getFilteredEvaluations.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
                     {viewTab === "my" ? "您暂无考核记录" : "暂无考核数据"}
                   </TableCell>
                 </TableRow>
@@ -1097,6 +1293,47 @@ export default function EvaluationsPage() {
                       <div className="text-lg font-semibold">{evaluation.total_score}</div>
                     </TableCell>
                     <TableCell>{getStatusBadge(evaluation.status)}</TableCell>
+                    <TableCell>
+                      <div className="text-sm">
+                        {/* 显示当前阶段的截止时间 */}
+                        {evaluation.status === "pending" && evaluation.self_eval_deadline && (
+                          <div className={`flex items-center gap-1 ${new Date(evaluation.self_eval_deadline) < new Date() ? 'text-red-600' : 'text-muted-foreground'}`}>
+                            <Clock className="w-3 h-3" />
+                            自评: {new Date(evaluation.self_eval_deadline).toLocaleDateString()}
+                          </div>
+                        )}
+                        {evaluation.status === "self_evaluated" && evaluation.manager_eval_deadline && (
+                          <div className={`flex items-center gap-1 ${new Date(evaluation.manager_eval_deadline) < new Date() ? 'text-red-600' : 'text-muted-foreground'}`}>
+                            <Clock className="w-3 h-3" />
+                            主管: {new Date(evaluation.manager_eval_deadline).toLocaleDateString()}
+                          </div>
+                        )}
+                        {evaluation.status === "manager_evaluated" && evaluation.hr_review_deadline && (
+                          <div className={`flex items-center gap-1 ${new Date(evaluation.hr_review_deadline) < new Date() ? 'text-red-600' : 'text-muted-foreground'}`}>
+                            <Clock className="w-3 h-3" />
+                            HR: {new Date(evaluation.hr_review_deadline).toLocaleDateString()}
+                          </div>
+                        )}
+                        {evaluation.status === "pending_confirm" && evaluation.final_confirm_deadline && (
+                          <div className={`flex items-center gap-1 ${new Date(evaluation.final_confirm_deadline) < new Date() ? 'text-red-600' : 'text-muted-foreground'}`}>
+                            <Clock className="w-3 h-3" />
+                            确认: {new Date(evaluation.final_confirm_deadline).toLocaleDateString()}
+                          </div>
+                        )}
+                        {evaluation.status === "completed" && (
+                          <div className="flex items-center gap-1 text-green-600">
+                            <CheckCircle className="w-3 h-3" />
+                            已完成
+                          </div>
+                        )}
+                        {/* 超时提示 */}
+                        {evaluation.is_overdue && (
+                          <div className="text-xs text-red-600 font-medium">
+                            ⚠️ 已超时
+                          </div>
+                        )}
+                      </div>
+                    </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end space-x-2">
                         <Button variant="outline" size="sm" onClick={() => handleViewDetails(evaluation)}>
@@ -1191,6 +1428,75 @@ export default function EvaluationsPage() {
                         </div>
                       )
                     })()}
+                  </div>
+                </div>
+
+                {/* 截止时间信息卡片 */}
+                <div className="bg-muted/30 p-4 rounded-lg">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Clock className="w-4 h-4" />
+                    <Label className="text-sm font-medium">截止时间安排</Label>
+                    {selectedEvaluation.time_mode && (
+                      <span className="text-xs px-2 py-1 bg-blue-100 text-blue-800 rounded">
+                        {selectedEvaluation.time_mode === "standard" ? "标准模式" : 
+                         selectedEvaluation.time_mode === "compressed" ? "压缩模式" : 
+                         selectedEvaluation.time_mode === "emergency" ? "紧急模式" : "自定义"}
+                      </span>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                    <div className={`p-3 rounded ${selectedEvaluation.status === "pending" ? 'bg-blue-100 border border-blue-300' : 'bg-gray-50'}`}>
+                      <div className="text-xs text-muted-foreground">员工自评</div>
+                      {selectedEvaluation.self_eval_deadline ? (
+                        <div className={`text-sm font-medium ${new Date(selectedEvaluation.self_eval_deadline) < new Date() ? 'text-red-600' : ''}`}>
+                          {new Date(selectedEvaluation.self_eval_deadline).toLocaleDateString()}
+                          {new Date(selectedEvaluation.self_eval_deadline) < new Date() && (
+                            <span className="text-xs text-red-600 block">已超时</span>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="text-sm text-muted-foreground">未设置</div>
+                      )}
+                    </div>
+                    <div className={`p-3 rounded ${selectedEvaluation.status === "self_evaluated" ? 'bg-blue-100 border border-blue-300' : 'bg-gray-50'}`}>
+                      <div className="text-xs text-muted-foreground">主管评分</div>
+                      {selectedEvaluation.manager_eval_deadline ? (
+                        <div className={`text-sm font-medium ${new Date(selectedEvaluation.manager_eval_deadline) < new Date() ? 'text-red-600' : ''}`}>
+                          {new Date(selectedEvaluation.manager_eval_deadline).toLocaleDateString()}
+                          {new Date(selectedEvaluation.manager_eval_deadline) < new Date() && (
+                            <span className="text-xs text-red-600 block">已超时</span>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="text-sm text-muted-foreground">未设置</div>
+                      )}
+                    </div>
+                    <div className={`p-3 rounded ${selectedEvaluation.status === "manager_evaluated" ? 'bg-blue-100 border border-blue-300' : 'bg-gray-50'}`}>
+                      <div className="text-xs text-muted-foreground">HR审核</div>
+                      {selectedEvaluation.hr_review_deadline ? (
+                        <div className={`text-sm font-medium ${new Date(selectedEvaluation.hr_review_deadline) < new Date() ? 'text-red-600' : ''}`}>
+                          {new Date(selectedEvaluation.hr_review_deadline).toLocaleDateString()}
+                          {new Date(selectedEvaluation.hr_review_deadline) < new Date() && (
+                            <span className="text-xs text-red-600 block">已超时</span>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="text-sm text-muted-foreground">未设置</div>
+                      )}
+                    </div>
+                    <div className={`p-3 rounded ${selectedEvaluation.status === "pending_confirm" ? 'bg-blue-100 border border-blue-300' : 'bg-gray-50'}`}>
+                      <div className="text-xs text-muted-foreground">最终确认</div>
+                      {selectedEvaluation.final_confirm_deadline ? (
+                        <div className={`text-sm font-medium ${new Date(selectedEvaluation.final_confirm_deadline) < new Date() ? 'text-red-600' : ''}`}>
+                          {new Date(selectedEvaluation.final_confirm_deadline).toLocaleDateString()}
+                          {new Date(selectedEvaluation.final_confirm_deadline) < new Date() && (
+                            <span className="text-xs text-red-600 block">已超时</span>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="text-sm text-muted-foreground">未设置</div>
+                      )}
+                    </div>
                   </div>
                 </div>
 

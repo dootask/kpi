@@ -5,12 +5,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
+import { Input } from "@/components/ui/input"
 import { Circle, CircleCheck } from "lucide-react"
 import { RefreshCw, CheckCircle, LogOut, Monitor, Sun, Moon, Palette, Shield } from "lucide-react"
 import { useAuth } from "@/lib/auth-context"
 import { useAppContext } from "@/lib/app-context"
 import { useTheme } from "@/lib/theme-context"
-import { settingsApi } from "@/lib/api"
+import { settingsApi, type DeadlineRules } from "@/lib/api"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 
@@ -23,6 +24,13 @@ export default function SettingsPage() {
   const [allowRegistration, setAllowRegistration] = useState(true)
   const [loading, setLoading] = useState(false)
   const [activeTab, setActiveTab] = useState<SettingTab>("appearance")
+  const [deadlineRules, setDeadlineRules] = useState<DeadlineRules>({
+    standard_days: { self_eval: 7, manager_eval: 4, hr_review: 2, final_confirm: 1 },
+    compressed_days: { self_eval: 5, manager_eval: 3, hr_review: 1, final_confirm: 1 },
+    minimum_days: { self_eval: 2, manager_eval: 2, hr_review: 1, final_confirm: 1 },
+    time_threshold: { standard: 14, compressed: 7, emergency: 6 },
+    auto_process_overdue: true,
+  })
 
   // 初始化设置状态
   useEffect(() => {
@@ -31,8 +39,12 @@ export default function SettingsPage() {
       
       try {
         setLoading(true)
-        const response = await settingsApi.get()
-        setAllowRegistration(response.data.allow_registration)
+        const [settingsResponse, deadlineRulesResponse] = await Promise.all([
+          settingsApi.get(),
+          settingsApi.getDeadlineRules()
+        ])
+        setAllowRegistration(settingsResponse.data.allow_registration)
+        setDeadlineRules(deadlineRulesResponse.data)
       } catch (error) {
         console.error("获取设置失败:", error)
         toast.error("获取设置失败")
@@ -59,6 +71,25 @@ export default function SettingsPage() {
     } catch (error) {
       console.error("保存设置失败:", error)
       toast.error("保存设置失败，请重试。")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // 保存截止时间规则
+  const handleSaveDeadlineRules = async () => {
+    if (!isHR) {
+      toast.error("只有HR用户可以保存系统设置")
+      return
+    }
+
+    setLoading(true)
+    try {
+      const response = await settingsApi.updateDeadlineRules(deadlineRules)
+      toast.success(response.message || "截止时间规则保存成功！")
+    } catch (error) {
+      console.error("保存截止时间规则失败:", error)
+      toast.error("保存截止时间规则失败，请重试。")
     } finally {
       setLoading(false)
     }
@@ -243,6 +274,208 @@ export default function SettingsPage() {
             保存设置
           </Button>
         </div>
+        
+        {/* 截止时间规则配置 */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">截止时间规则配置</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {/* 标准模式时间 */}
+            <div className="p-4 bg-muted/50 rounded-lg">
+              <h4 className="font-medium mb-3">标准模式时间（天）</h4>
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <div>
+                  <Label htmlFor="standard_self_eval">员工自评</Label>
+                  <Input
+                    id="standard_self_eval"
+                    type="number"
+                    min="1"
+                    value={deadlineRules.standard_days.self_eval}
+                    onChange={e => setDeadlineRules(prev => ({
+                      ...prev,
+                      standard_days: { ...prev.standard_days, self_eval: parseInt(e.target.value) || 0 }
+                    }))}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="standard_manager_eval">主管评分</Label>
+                  <Input
+                    id="standard_manager_eval"
+                    type="number"
+                    min="1"
+                    value={deadlineRules.standard_days.manager_eval}
+                    onChange={e => setDeadlineRules(prev => ({
+                      ...prev,
+                      standard_days: { ...prev.standard_days, manager_eval: parseInt(e.target.value) || 0 }
+                    }))}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="standard_hr_review">HR审核</Label>
+                  <Input
+                    id="standard_hr_review"
+                    type="number"
+                    min="1"
+                    value={deadlineRules.standard_days.hr_review}
+                    onChange={e => setDeadlineRules(prev => ({
+                      ...prev,
+                      standard_days: { ...prev.standard_days, hr_review: parseInt(e.target.value) || 0 }
+                    }))}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="standard_final_confirm">最终确认</Label>
+                  <Input
+                    id="standard_final_confirm"
+                    type="number"
+                    min="1"
+                    value={deadlineRules.standard_days.final_confirm}
+                    onChange={e => setDeadlineRules(prev => ({
+                      ...prev,
+                      standard_days: { ...prev.standard_days, final_confirm: parseInt(e.target.value) || 0 }
+                    }))}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* 压缩模式时间 */}
+            <div className="p-4 bg-muted/50 rounded-lg">
+              <h4 className="font-medium mb-3">压缩模式时间（天）</h4>
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <div>
+                  <Label htmlFor="compressed_self_eval">员工自评</Label>
+                  <Input
+                    id="compressed_self_eval"
+                    type="number"
+                    min="1"
+                    value={deadlineRules.compressed_days.self_eval}
+                    onChange={e => setDeadlineRules(prev => ({
+                      ...prev,
+                      compressed_days: { ...prev.compressed_days, self_eval: parseInt(e.target.value) || 0 }
+                    }))}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="compressed_manager_eval">主管评分</Label>
+                  <Input
+                    id="compressed_manager_eval"
+                    type="number"
+                    min="1"
+                    value={deadlineRules.compressed_days.manager_eval}
+                    onChange={e => setDeadlineRules(prev => ({
+                      ...prev,
+                      compressed_days: { ...prev.compressed_days, manager_eval: parseInt(e.target.value) || 0 }
+                    }))}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="compressed_hr_review">HR审核</Label>
+                  <Input
+                    id="compressed_hr_review"
+                    type="number"
+                    min="1"
+                    value={deadlineRules.compressed_days.hr_review}
+                    onChange={e => setDeadlineRules(prev => ({
+                      ...prev,
+                      compressed_days: { ...prev.compressed_days, hr_review: parseInt(e.target.value) || 0 }
+                    }))}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="compressed_final_confirm">最终确认</Label>
+                  <Input
+                    id="compressed_final_confirm"
+                    type="number"
+                    min="1"
+                    value={deadlineRules.compressed_days.final_confirm}
+                    onChange={e => setDeadlineRules(prev => ({
+                      ...prev,
+                      compressed_days: { ...prev.compressed_days, final_confirm: parseInt(e.target.value) || 0 }
+                    }))}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* 时间阈值设置 */}
+            <div className="p-4 bg-muted/50 rounded-lg">
+              <h4 className="font-medium mb-3">时间阈值设置（天）</h4>
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                <div>
+                  <Label htmlFor="threshold_standard">标准模式阈值</Label>
+                  <Input
+                    id="threshold_standard"
+                    type="number"
+                    min="1"
+                    value={deadlineRules.time_threshold.standard}
+                    onChange={e => setDeadlineRules(prev => ({
+                      ...prev,
+                      time_threshold: { ...prev.time_threshold, standard: parseInt(e.target.value) || 0 }
+                    }))}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">≥该天数时使用标准模式</p>
+                </div>
+                <div>
+                  <Label htmlFor="threshold_compressed">压缩模式阈值</Label>
+                  <Input
+                    id="threshold_compressed"
+                    type="number"
+                    min="1"
+                    value={deadlineRules.time_threshold.compressed}
+                    onChange={e => setDeadlineRules(prev => ({
+                      ...prev,
+                      time_threshold: { ...prev.time_threshold, compressed: parseInt(e.target.value) || 0 }
+                    }))}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">≥该天数时使用压缩模式</p>
+                </div>
+                <div>
+                  <Label htmlFor="threshold_emergency">紧急模式阈值</Label>
+                  <Input
+                    id="threshold_emergency"
+                    type="number"
+                    min="1"
+                    value={deadlineRules.time_threshold.emergency}
+                    onChange={e => setDeadlineRules(prev => ({
+                      ...prev,
+                      time_threshold: { ...prev.time_threshold, emergency: parseInt(e.target.value) || 0 }
+                    }))}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">≥该天数时使用紧急模式</p>
+                </div>
+              </div>
+            </div>
+
+            {/* 自动处理设置 */}
+            <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg">
+              <div className="flex-1">
+                <Label htmlFor="auto_process_overdue" className="text-sm font-medium">
+                  自动处理超时
+                </Label>
+                <p className="text-sm text-muted-foreground mt-1">
+                  开启后，系统会自动处理超时的考核评估，推进到下一个阶段。
+                </p>
+              </div>
+              <Switch 
+                id="auto_process_overdue" 
+                checked={deadlineRules.auto_process_overdue} 
+                onCheckedChange={checked => setDeadlineRules(prev => ({
+                  ...prev,
+                  auto_process_overdue: checked
+                }))}
+              />
+            </div>
+
+            <div className="flex justify-end">
+              <Button onClick={handleSaveDeadlineRules} disabled={loading}>
+                {loading ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <CheckCircle className="w-4 h-4 mr-2" />}
+                保存截止时间规则
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
       </CardContent>
     </Card>
   )
