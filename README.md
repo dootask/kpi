@@ -202,13 +202,24 @@ npm run lint          # 代码质量检查
 
 ## 🤝 默认测试账户
 
-系统启动后会自动创建测试数据，包括：
+系统启动后会自动创建测试数据，包括以下默认账户（默认密码均为：`123456`）：
 
-- **HR 管理员账户**
-- **部门主管账户**  
-- **普通员工账户**
+### HR 管理员账户
+- **账户**：sunba@company.com
+- **姓名**：孙八
+- **职位**：HR经理
+- **权限**：系统全部功能
 
-具体账户信息请查看 `server/models/database.go` 中的 `CreateTestData` 函数。
+### 部门主管账户
+- **技术总监**：zhangsan@company.com (张三)
+- **市场总监**：zhaoliu@company.com (赵六)
+- **财务经理**：zhoujiu@company.com (周九)
+- **权限**：部门管理、员工考核、数据导出
+
+### 普通员工账户
+- **技术员工**：lisi@company.com (李四)、wangwu@company.com (王五)
+- **市场员工**：qianqi@company.com (钱七)
+- **权限**：查看和填写个人考核
 
 ## 📄 许可证
 

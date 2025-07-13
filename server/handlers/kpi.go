@@ -3,8 +3,10 @@ package handlers
 import (
 	"net/http"
 	"strconv"
+	"time"
 
 	"dootask-kpi-server/models"
+	"dootask-kpi-server/utils"
 
 	"github.com/gin-gonic/gin"
 )
@@ -208,6 +210,62 @@ func GetEvaluations(c *gin.Context) {
 }
 
 // 创建评估
+// 时间检查请求结构
+type TimeCheckRequest struct {
+	Period   string `json:"period"`   // monthly, quarterly, yearly
+	Year     int    `json:"year"`
+	Month    *int   `json:"month,omitempty"`
+	Quarter  *int   `json:"quarter,omitempty"`
+}
+
+// 时间检查响应结构
+type TimeCheckResponse struct {
+	IsValid         bool                `json:"is_valid"`
+	TimeMode        string              `json:"time_mode"`
+	Message         string              `json:"message,omitempty"`
+	AvailableDays   int                 `json:"available_days"`
+	RecommendedDeadlines utils.DeadlineSet `json:"recommended_deadlines"`
+}
+
+// 检查时间可用性
+func CheckTimeAvailability(c *gin.Context) {
+	var req TimeCheckRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "请求参数错误",
+			"message": err.Error(),
+		})
+		return
+	}
+
+	// 加载系统配置
+	calculator, err := loadDeadlineCalculator(req.Period, req.Year, req.Month, req.Quarter)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "加载系统配置失败",
+			"message": err.Error(),
+		})
+		return
+	}
+
+	// 计算推荐的截止时间
+	deadlines := calculator.CalculateDeadlines()
+	availableDays := calculator.CalculateAvailableDays()
+
+	response := TimeCheckResponse{
+		IsValid:              deadlines.IsValid,
+		TimeMode:             deadlines.TimeMode,
+		Message:              deadlines.Message,
+		AvailableDays:        availableDays,
+		RecommendedDeadlines: deadlines,
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"data": response,
+	})
+}
+
+// 创建评估（修改版，支持截止时间）
 func CreateEvaluation(c *gin.Context) {
 	var evaluation models.KPIEvaluation
 
@@ -217,6 +275,63 @@ func CreateEvaluation(c *gin.Context) {
 			"message": err.Error(),
 		})
 		return
+	}
+
+	// 如果没有提供截止时间，则自动计算
+	if evaluation.SelfEvalDeadline == nil {
+		calculator, err := loadDeadlineCalculator(evaluation.Period, evaluation.Year, evaluation.Month, evaluation.Quarter)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":   "加载系统配置失败",
+				"message": err.Error(),
+			})
+			return
+		}
+
+		deadlines := calculator.CalculateDeadlines()
+		if !deadlines.IsValid {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":   "时间不足",
+				"message": deadlines.Message,
+			})
+			return
+		}
+
+		// 设置计算得出的截止时间
+		evaluation.PeriodEndDate = deadlines.PeriodEnd
+		evaluation.SelfEvalDeadline = deadlines.SelfEvalDeadline
+		evaluation.ManagerEvalDeadline = deadlines.ManagerEvalDeadline
+		evaluation.HRReviewDeadline = deadlines.HRReviewDeadline
+		evaluation.FinalConfirmDeadline = deadlines.FinalConfirmDeadline
+		evaluation.TimeMode = deadlines.TimeMode
+	} else {
+		// 如果提供了自定义截止时间，则验证
+		calculator, err := loadDeadlineCalculator(evaluation.Period, evaluation.Year, evaluation.Month, evaluation.Quarter)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":   "加载系统配置失败",
+				"message": err.Error(),
+			})
+			return
+		}
+
+		customDeadlines := calculator.CreateCustomDeadlines(
+			*evaluation.SelfEvalDeadline,
+			*evaluation.ManagerEvalDeadline,
+			*evaluation.HRReviewDeadline,
+			*evaluation.FinalConfirmDeadline,
+		)
+
+		if !customDeadlines.IsValid {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":   "自定义截止时间无效",
+				"message": customDeadlines.Message,
+			})
+			return
+		}
+
+		evaluation.PeriodEndDate = customDeadlines.PeriodEnd
+		evaluation.TimeMode = "custom"
 	}
 
 	// 开始数据库事务
@@ -262,6 +377,60 @@ func CreateEvaluation(c *gin.Context) {
 		"message": "评估创建成功",
 		"data":    evaluation,
 	})
+}
+
+// 加载截止时间计算器
+func loadDeadlineCalculator(period string, year int, month *int, quarter *int) (*utils.DeadlineCalculator, error) {
+	// 获取系统配置
+	var standardSetting models.SystemSetting
+	if err := models.DB.Where("key = ?", "deadline_standard_days").First(&standardSetting).Error; err != nil {
+		return nil, err
+	}
+	standardDays, err := utils.ParseDeadlineDaysFromJSON(standardSetting.Value)
+	if err != nil {
+		return nil, err
+	}
+
+	var compressedSetting models.SystemSetting
+	if err := models.DB.Where("key = ?", "deadline_compressed_days").First(&compressedSetting).Error; err != nil {
+		return nil, err
+	}
+	compressedDays, err := utils.ParseDeadlineDaysFromJSON(compressedSetting.Value)
+	if err != nil {
+		return nil, err
+	}
+
+	var minimumSetting models.SystemSetting
+	if err := models.DB.Where("key = ?", "deadline_minimum_days").First(&minimumSetting).Error; err != nil {
+		return nil, err
+	}
+	minimumDays, err := utils.ParseDeadlineDaysFromJSON(minimumSetting.Value)
+	if err != nil {
+		return nil, err
+	}
+
+	var thresholdSetting models.SystemSetting
+	if err := models.DB.Where("key = ?", "deadline_time_threshold").First(&thresholdSetting).Error; err != nil {
+		return nil, err
+	}
+	threshold, err := utils.ParseTimeThresholdFromJSON(thresholdSetting.Value)
+	if err != nil {
+		return nil, err
+	}
+
+	calculator := &utils.DeadlineCalculator{
+		PeriodType:     period,
+		CreatedAt:      time.Now(),
+		Year:           year,
+		Month:          month,
+		Quarter:        quarter,
+		StandardDays:   standardDays,
+		CompressedDays: compressedDays,
+		MinimumDays:    minimumDays,
+		TimeThreshold:  threshold,
+	}
+
+	return calculator, nil
 }
 
 // 获取单个评估

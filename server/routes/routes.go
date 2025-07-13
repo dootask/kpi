@@ -31,6 +31,8 @@ func SetupRoutes(r *gin.RouterGroup) {
 	{
 		settingsRoutes.GET("", handlers.GetSystemSettings)                                   // 所有用户可以读取设置
 		settingsRoutes.PUT("", handlers.RoleMiddleware("hr"), handlers.UpdateSystemSettings) // 只有HR可以修改设置
+		settingsRoutes.GET("/deadline-rules", handlers.GetDeadlineRules)                     // 获取截止时间规则
+		settingsRoutes.PUT("/deadline-rules", handlers.RoleMiddleware("hr"), handlers.UpdateDeadlineRules) // 更新截止时间规则（仅HR）
 	}
 
 	// 需要认证的路由
@@ -85,6 +87,7 @@ func SetupRoutes(r *gin.RouterGroup) {
 		evaluationRoutes := protected.Group("/evaluations")
 		{
 			evaluationRoutes.GET("", handlers.GetEvaluations)
+			evaluationRoutes.POST("/check-time", handlers.RoleMiddleware("hr", "manager"), handlers.CheckTimeAvailability) // 检查时间可用性
 			evaluationRoutes.POST("", handlers.RoleMiddleware("hr", "manager"), handlers.CreateEvaluation)
 			evaluationRoutes.GET("/:id", handlers.GetEvaluation)
 			evaluationRoutes.PUT("/:id", handlers.UpdateEvaluation)

@@ -92,6 +92,14 @@ export interface KPIEvaluation {
   total_score: number
   final_comment: string
   created_at: string
+  // 截止时间相关字段
+  period_end_date?: string
+  self_eval_deadline?: string
+  manager_eval_deadline?: string
+  hr_review_deadline?: string
+  final_confirm_deadline?: string
+  time_mode?: string
+  is_overdue?: boolean
   employee?: Employee
   template?: KPITemplate
   scores?: KPIScore[]
@@ -182,6 +190,54 @@ export interface ExportResponse {
 // 设置相关接口
 export interface SystemSettings {
   allow_registration: boolean
+}
+
+// 截止时间相关接口
+export interface DeadlineDays {
+  self_eval: number
+  manager_eval: number
+  hr_review: number
+  final_confirm: number
+}
+
+export interface TimeThreshold {
+  standard: number
+  compressed: number
+  emergency: number
+}
+
+export interface DeadlineRules {
+  standard_days: DeadlineDays
+  compressed_days: DeadlineDays
+  minimum_days: DeadlineDays
+  time_threshold: TimeThreshold
+  auto_process_overdue: boolean
+}
+
+export interface DeadlineSet {
+  period_end?: string
+  self_eval_deadline?: string
+  manager_eval_deadline?: string
+  hr_review_deadline?: string
+  final_confirm_deadline?: string
+  time_mode: string
+  is_valid: boolean
+  message?: string
+}
+
+export interface TimeCheckRequest {
+  period: string
+  year: number
+  month?: number
+  quarter?: number
+}
+
+export interface TimeCheckResponse {
+  is_valid: boolean
+  time_mode: string
+  message?: string
+  available_days: number
+  recommended_deadlines: DeadlineSet
 }
 
 // 消息类型
@@ -301,6 +357,9 @@ export const evaluationApi = {
     api.get(`/evaluations/employee/${employeeId}`),
   getPending: (employeeId: number): Promise<{ data: KPIEvaluation[]; total: number }> =>
     api.get(`/evaluations/pending/${employeeId}`),
+  // 检查时间可用性
+  checkTimeAvailability: (data: TimeCheckRequest): Promise<{ data: TimeCheckResponse }> =>
+    api.post("/evaluations/check-time", data),
 }
 
 // KPI评分API
@@ -433,6 +492,12 @@ export const settingsApi = {
 
   // 更新系统设置
   update: (data: SystemSettings): Promise<{ data: SystemSettings; message: string }> => api.put("/settings", data),
+
+  // 获取截止时间规则
+  getDeadlineRules: (): Promise<{ data: DeadlineRules }> => api.get("/settings/deadline-rules"),
+
+  // 更新截止时间规则
+  updateDeadlineRules: (data: DeadlineRules): Promise<{ data: DeadlineRules; message: string }> => api.put("/settings/deadline-rules", data),
 }
 
 export default api

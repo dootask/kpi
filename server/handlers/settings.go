@@ -3,9 +3,11 @@ package handlers
 import (
 	"net/http"
 	"strconv"
+	"encoding/json"
 
 	"github.com/gin-gonic/gin"
 	"dootask-kpi-server/models"
+	"dootask-kpi-server/utils"
 )
 
 // 系统设置响应结构
@@ -107,4 +109,108 @@ func SetSetting(key, value, settingType string) error {
 		}
 		return models.DB.Save(&setting).Error
 	}
+}
+
+// 截止时间规则响应结构
+type DeadlineRulesResponse struct {
+	StandardDays   utils.DeadlineDays   `json:"standard_days"`
+	CompressedDays utils.DeadlineDays   `json:"compressed_days"`
+	MinimumDays    utils.DeadlineDays   `json:"minimum_days"`
+	TimeThreshold  utils.TimeThreshold  `json:"time_threshold"`
+	AutoProcessOverdue bool              `json:"auto_process_overdue"`
+}
+
+// 获取截止时间规则
+func GetDeadlineRules(c *gin.Context) {
+	var rules DeadlineRulesResponse
+	
+	// 获取标准模式时间
+	if standardStr, err := GetSetting("deadline_standard_days"); err == nil {
+		if standardDays, err := utils.ParseDeadlineDaysFromJSON(standardStr); err == nil {
+			rules.StandardDays = standardDays
+		}
+	}
+	
+	// 获取压缩模式时间
+	if compressedStr, err := GetSetting("deadline_compressed_days"); err == nil {
+		if compressedDays, err := utils.ParseDeadlineDaysFromJSON(compressedStr); err == nil {
+			rules.CompressedDays = compressedDays
+		}
+	}
+	
+	// 获取最小时间要求
+	if minimumStr, err := GetSetting("deadline_minimum_days"); err == nil {
+		if minimumDays, err := utils.ParseDeadlineDaysFromJSON(minimumStr); err == nil {
+			rules.MinimumDays = minimumDays
+		}
+	}
+	
+	// 获取时间阈值
+	if thresholdStr, err := GetSetting("deadline_time_threshold"); err == nil {
+		if threshold, err := utils.ParseTimeThresholdFromJSON(thresholdStr); err == nil {
+			rules.TimeThreshold = threshold
+		}
+	}
+	
+	// 获取自动处理超时设置
+	if autoProcessStr, err := GetSetting("auto_process_overdue"); err == nil {
+		rules.AutoProcessOverdue = autoProcessStr == "true"
+	}
+	
+	c.JSON(http.StatusOK, gin.H{
+		"data": rules,
+	})
+}
+
+// 更新截止时间规则
+func UpdateDeadlineRules(c *gin.Context) {
+	var req DeadlineRulesResponse
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	
+	// 更新标准模式时间
+	if standardJson, err := json.Marshal(req.StandardDays); err == nil {
+		if err := SetSetting("deadline_standard_days", string(standardJson), "json"); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "更新标准模式时间失败"})
+			return
+		}
+	}
+	
+	// 更新压缩模式时间
+	if compressedJson, err := json.Marshal(req.CompressedDays); err == nil {
+		if err := SetSetting("deadline_compressed_days", string(compressedJson), "json"); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "更新压缩模式时间失败"})
+			return
+		}
+	}
+	
+	// 更新最小时间要求
+	if minimumJson, err := json.Marshal(req.MinimumDays); err == nil {
+		if err := SetSetting("deadline_minimum_days", string(minimumJson), "json"); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "更新最小时间要求失败"})
+			return
+		}
+	}
+	
+	// 更新时间阈值
+	if thresholdJson, err := json.Marshal(req.TimeThreshold); err == nil {
+		if err := SetSetting("deadline_time_threshold", string(thresholdJson), "json"); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "更新时间阈值失败"})
+			return
+		}
+	}
+	
+	// 更新自动处理超时设置
+	autoProcessValue := strconv.FormatBool(req.AutoProcessOverdue)
+	if err := SetSetting("auto_process_overdue", autoProcessValue, "boolean"); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新自动处理设置失败"})
+		return
+	}
+	
+	c.JSON(http.StatusOK, gin.H{
+		"message": "截止时间规则更新成功",
+		"data": req,
+	})
 }
