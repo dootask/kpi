@@ -131,6 +131,12 @@ func CreateTestData() {
 	// 创建默认系统设置
 	settings := []SystemSetting{
 		{Key: "allow_registration", Value: "true", Type: "boolean"},
+		// 截止时间配置
+		{Key: "deadline_standard_days", Value: `{"self_eval": 7, "manager_eval": 4, "hr_review": 2, "final_confirm": 1}`, Type: "json"},
+		{Key: "deadline_compressed_days", Value: `{"self_eval": 5, "manager_eval": 3, "hr_review": 1, "final_confirm": 1}`, Type: "json"},
+		{Key: "deadline_minimum_days", Value: `{"self_eval": 2, "manager_eval": 2, "hr_review": 1, "final_confirm": 1}`, Type: "json"},
+		{Key: "deadline_time_threshold", Value: `{"standard": 14, "compressed": 7, "emergency": 6}`, Type: "json"},
+		{Key: "auto_process_overdue", Value: "true", Type: "boolean"},
 	}
 
 	for _, setting := range settings {

@@ -77,6 +77,16 @@ type KPIEvaluation struct {
 	Status       string    `json:"status" gorm:"default:pending"` // pending, self_evaluated, manager_evaluated, pending_confirm, completed
 	TotalScore   float64   `json:"total_score"`
 	FinalComment string    `json:"final_comment"`
+	
+	// 截止时间相关字段
+	PeriodEndDate         *time.Time `json:"period_end_date,omitempty"`         // 考核周期结束时间
+	SelfEvalDeadline      *time.Time `json:"self_eval_deadline,omitempty"`      // 自评截止时间
+	ManagerEvalDeadline   *time.Time `json:"manager_eval_deadline,omitempty"`   // 主管评分截止时间
+	HRReviewDeadline      *time.Time `json:"hr_review_deadline,omitempty"`      // HR审核截止时间
+	FinalConfirmDeadline  *time.Time `json:"final_confirm_deadline,omitempty"`  // 最终确认截止时间
+	TimeMode              string     `json:"time_mode" gorm:"default:standard"` // standard, compressed, emergency, custom
+	IsOverdue             bool       `json:"is_overdue" gorm:"default:false"`   // 是否超时
+	
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
 
