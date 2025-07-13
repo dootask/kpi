@@ -1042,50 +1042,106 @@ export default function EvaluationsPage() {
                   </div>
                 )}
 
-                {/* 自定义截止时间输入 */}
-                {timeMode === "custom" && (
-                  <div className="space-y-3">
-                    <div className="text-sm text-muted-foreground">请设置各阶段的截止时间：</div>
-                    <div className="grid grid-cols-1 gap-3">
-                      <div className="flex flex-col gap-2">
-                        <Label htmlFor="self_eval_deadline">员工自评截止时间</Label>
-                        <Input
-                          id="self_eval_deadline"
-                          type="datetime-local"
-                          value={customDeadlines.self_eval_deadline}
-                          onChange={e => setCustomDeadlines(prev => ({ ...prev, self_eval_deadline: e.target.value }))}
-                        />
-                      </div>
-                      <div className="flex flex-col gap-2">
-                        <Label htmlFor="manager_eval_deadline">主管评分截止时间</Label>
-                        <Input
-                          id="manager_eval_deadline"
-                          type="datetime-local"
-                          value={customDeadlines.manager_eval_deadline}
-                          onChange={e => setCustomDeadlines(prev => ({ ...prev, manager_eval_deadline: e.target.value }))}
-                        />
-                      </div>
-                      <div className="flex flex-col gap-2">
-                        <Label htmlFor="hr_review_deadline">HR审核截止时间</Label>
-                        <Input
-                          id="hr_review_deadline"
-                          type="datetime-local"
-                          value={customDeadlines.hr_review_deadline}
-                          onChange={e => setCustomDeadlines(prev => ({ ...prev, hr_review_deadline: e.target.value }))}
-                        />
-                      </div>
-                      <div className="flex flex-col gap-2">
-                        <Label htmlFor="final_confirm_deadline">最终确认截止时间</Label>
-                        <Input
-                          id="final_confirm_deadline"
-                          type="datetime-local"
-                          value={customDeadlines.final_confirm_deadline}
-                          onChange={e => setCustomDeadlines(prev => ({ ...prev, final_confirm_deadline: e.target.value }))}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                )}
+                                 {/* 自定义截止时间输入 */}
+                 {timeMode === "custom" && (
+                   <div className="space-y-3">
+                     <div className="text-sm text-muted-foreground">请设置各阶段的截止时间：</div>
+                     <div className="grid grid-cols-1 gap-4">
+                       <div className="flex flex-col gap-2">
+                         <Label htmlFor="self_eval_deadline">员工自评截止时间</Label>
+                         <div className="flex gap-2">
+                           <Input
+                             type="date"
+                             value={customDeadlines.self_eval_deadline.split('T')[0] || ''}
+                             onChange={e => {
+                               const time = customDeadlines.self_eval_deadline.split('T')[1] || '18:00'
+                               setCustomDeadlines(prev => ({ ...prev, self_eval_deadline: `${e.target.value}T${time}` }))
+                             }}
+                             className="flex-1"
+                           />
+                           <Input
+                             type="time"
+                             value={customDeadlines.self_eval_deadline.split('T')[1] || '18:00'}
+                             onChange={e => {
+                               const date = customDeadlines.self_eval_deadline.split('T')[0] || ''
+                               setCustomDeadlines(prev => ({ ...prev, self_eval_deadline: `${date}T${e.target.value}` }))
+                             }}
+                             className="w-32"
+                           />
+                         </div>
+                       </div>
+                       <div className="flex flex-col gap-2">
+                         <Label htmlFor="manager_eval_deadline">主管评分截止时间</Label>
+                         <div className="flex gap-2">
+                           <Input
+                             type="date"
+                             value={customDeadlines.manager_eval_deadline.split('T')[0] || ''}
+                             onChange={e => {
+                               const time = customDeadlines.manager_eval_deadline.split('T')[1] || '18:00'
+                               setCustomDeadlines(prev => ({ ...prev, manager_eval_deadline: `${e.target.value}T${time}` }))
+                             }}
+                             className="flex-1"
+                           />
+                           <Input
+                             type="time"
+                             value={customDeadlines.manager_eval_deadline.split('T')[1] || '18:00'}
+                             onChange={e => {
+                               const date = customDeadlines.manager_eval_deadline.split('T')[0] || ''
+                               setCustomDeadlines(prev => ({ ...prev, manager_eval_deadline: `${date}T${e.target.value}` }))
+                             }}
+                             className="w-32"
+                           />
+                         </div>
+                       </div>
+                       <div className="flex flex-col gap-2">
+                         <Label htmlFor="hr_review_deadline">HR审核截止时间</Label>
+                         <div className="flex gap-2">
+                           <Input
+                             type="date"
+                             value={customDeadlines.hr_review_deadline.split('T')[0] || ''}
+                             onChange={e => {
+                               const time = customDeadlines.hr_review_deadline.split('T')[1] || '18:00'
+                               setCustomDeadlines(prev => ({ ...prev, hr_review_deadline: `${e.target.value}T${time}` }))
+                             }}
+                             className="flex-1"
+                           />
+                           <Input
+                             type="time"
+                             value={customDeadlines.hr_review_deadline.split('T')[1] || '18:00'}
+                             onChange={e => {
+                               const date = customDeadlines.hr_review_deadline.split('T')[0] || ''
+                               setCustomDeadlines(prev => ({ ...prev, hr_review_deadline: `${date}T${e.target.value}` }))
+                             }}
+                             className="w-32"
+                           />
+                         </div>
+                       </div>
+                       <div className="flex flex-col gap-2">
+                         <Label htmlFor="final_confirm_deadline">最终确认截止时间</Label>
+                         <div className="flex gap-2">
+                           <Input
+                             type="date"
+                             value={customDeadlines.final_confirm_deadline.split('T')[0] || ''}
+                             onChange={e => {
+                               const time = customDeadlines.final_confirm_deadline.split('T')[1] || '18:00'
+                               setCustomDeadlines(prev => ({ ...prev, final_confirm_deadline: `${e.target.value}T${time}` }))
+                             }}
+                             className="flex-1"
+                           />
+                           <Input
+                             type="time"
+                             value={customDeadlines.final_confirm_deadline.split('T')[1] || '18:00'}
+                             onChange={e => {
+                               const date = customDeadlines.final_confirm_deadline.split('T')[0] || ''
+                               setCustomDeadlines(prev => ({ ...prev, final_confirm_deadline: `${date}T${e.target.value}` }))
+                             }}
+                             className="w-32"
+                           />
+                         </div>
+                       </div>
+                     </div>
+                   </div>
+                 )}
 
                 <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 sm:space-x-2 sm:gap-0">
                   <Button
