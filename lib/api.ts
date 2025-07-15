@@ -94,10 +94,13 @@ export interface KPIEvaluation {
   status: string
   total_score: number
   final_comment: string
+  has_shares: boolean
+  share_count: number
   created_at: string
   employee?: Employee
   template?: KPITemplate
   scores?: KPIScore[]
+  shares?: EvaluationShare[]
 }
 
 export interface KPIScore {
@@ -114,6 +117,46 @@ export interface KPIScore {
   final_comment: string
   created_at: string
   item?: KPIItem
+}
+
+export interface EvaluationShare {
+  id: number
+  evaluation_id: number
+  shared_to_id: number
+  shared_by_id: number
+  status: string
+  message: string
+  deadline?: string
+  created_at: string
+  updated_at: string
+  evaluation?: KPIEvaluation
+  shared_to?: Employee
+  shared_by?: Employee
+  scores?: ShareScore[]
+}
+
+export interface ShareScore {
+  id: number
+  share_id: number
+  item_id: number
+  score?: number
+  comment: string
+  created_at: string
+  updated_at: string
+  share?: EvaluationShare
+  item?: KPIItem
+}
+
+export interface ShareSummary {
+  item_id: number
+  item_name: string
+  average_score: number
+  score_count: number
+  scores: Array<{
+    shared_to: string
+    score?: number
+    comment: string
+  }>
 }
 
 export interface DashboardStats {
@@ -447,6 +490,45 @@ export const authApi = {
     const userInfo = localStorage.getItem("user_info")
     return userInfo ? JSON.parse(userInfo) : null
   },
+}
+
+// 共享API
+export const shareApi = {
+  // 创建共享
+  create: (evaluationId: number, data: { shared_to_ids: number[]; message: string; deadline?: string }): Promise<{ data: EvaluationShare[]; message: string }> =>
+    api.post(`/evaluations/${evaluationId}/shares`, data),
+
+  // 获取评估的共享列表
+  getByEvaluation: (evaluationId: number): Promise<{ data: EvaluationShare[] }> =>
+    api.get(`/evaluations/${evaluationId}/shares`),
+
+  // 删除共享
+  delete: (evaluationId: number, shareId: number): Promise<{ message: string }> =>
+    api.delete(`/evaluations/${evaluationId}/shares/${shareId}`),
+
+  // 获取共享评分汇总
+  getSummary: (evaluationId: number): Promise<{ data: ShareSummary[] }> =>
+    api.get(`/evaluations/${evaluationId}/share-summary`),
+
+  // 获取我的共享任务
+  getMy: (): Promise<{ data: EvaluationShare[] }> =>
+    api.get("/shares/my"),
+
+  // 获取共享详情
+  getDetail: (shareId: number): Promise<{ data: EvaluationShare }> =>
+    api.get(`/shares/${shareId}`),
+
+  // 获取共享评分
+  getScores: (shareId: number): Promise<{ data: ShareScore[] }> =>
+    api.get(`/shares/${shareId}/scores`),
+
+  // 更新共享评分
+  updateScore: (shareId: number, itemId: number, data: { score?: number; comment: string }): Promise<{ data: ShareScore; message: string }> =>
+    api.put(`/shares/${shareId}/scores/${itemId}`, data),
+
+  // 提交共享评分
+  submit: (shareId: number): Promise<{ message: string }> =>
+    api.post(`/shares/${shareId}/submit`),
 }
 
 // 系统设置API

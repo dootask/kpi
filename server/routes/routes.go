@@ -100,12 +100,18 @@ func SetupRoutes(r *gin.RouterGroup) {
 			evaluationRoutes.GET("/employee/:employeeId", handlers.GetEmployeeEvaluations)
 			evaluationRoutes.GET("/pending/:employeeId", handlers.GetPendingEvaluations)
 
-			// 评论管理（所有认证用户）
-			evaluationRoutes.GET("/:id/comments", handlers.GetEvaluationComments)
-			evaluationRoutes.POST("/:id/comments", handlers.CreateEvaluationComment)
-			evaluationRoutes.PUT("/:id/comments/:comment_id", handlers.UpdateEvaluationComment)
-			evaluationRoutes.DELETE("/:id/comments/:comment_id", handlers.DeleteEvaluationComment)
-		}
+					// 评论管理（所有认证用户）
+		evaluationRoutes.GET("/:id/comments", handlers.GetEvaluationComments)
+		evaluationRoutes.POST("/:id/comments", handlers.CreateEvaluationComment)
+		evaluationRoutes.PUT("/:id/comments/:comment_id", handlers.UpdateEvaluationComment)
+		evaluationRoutes.DELETE("/:id/comments/:comment_id", handlers.DeleteEvaluationComment)
+
+		// 共享管理（仅HR）
+		evaluationRoutes.POST("/:id/shares", handlers.RoleMiddleware("hr"), handlers.CreateShare)
+		evaluationRoutes.GET("/:id/shares", handlers.RoleMiddleware("hr"), handlers.GetShares)
+		evaluationRoutes.DELETE("/:id/shares/:shareId", handlers.RoleMiddleware("hr"), handlers.DeleteShare)
+		evaluationRoutes.GET("/:id/share-summary", handlers.RoleMiddleware("hr"), handlers.GetShareSummary)
+	}
 
 		// KPI评分管理（所有认证用户）
 		scoreRoutes := protected.Group("/scores")
@@ -115,6 +121,16 @@ func SetupRoutes(r *gin.RouterGroup) {
 			scoreRoutes.PUT("/:id/manager", handlers.RoleMiddleware("manager", "hr"), handlers.UpdateManagerScore)
 			scoreRoutes.PUT("/:id/hr", handlers.RoleMiddleware("hr"), handlers.UpdateHRScore)
 			scoreRoutes.PUT("/:id/final", handlers.RoleMiddleware("hr"), handlers.UpdateFinalScore)
+		}
+
+		// 共享评分管理（被共享人员）
+		shareRoutes := protected.Group("/shares")
+		{
+			shareRoutes.GET("/my", handlers.GetMyShares)
+			shareRoutes.GET("/:shareId", handlers.GetShareDetail)
+			shareRoutes.GET("/:shareId/scores", handlers.GetShareScores)
+			shareRoutes.PUT("/:shareId/scores/:itemId", handlers.UpdateShareScore)
+			shareRoutes.POST("/:shareId/submit", handlers.SubmitShareScore)
 		}
 
 		// 统计分析（所有认证用户）

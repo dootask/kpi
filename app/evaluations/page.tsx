@@ -34,11 +34,14 @@ import {
   employeeApi,
   templateApi,
   commentApi,
+  shareApi,
   type KPIEvaluation,
   type KPIScore,
   type Employee,
   type KPITemplate,
   type EvaluationComment,
+  type EvaluationShare,
+  type ShareSummary,
   type PaginatedResponse,
   type EvaluationPaginationParams,
 } from "@/lib/api"
@@ -100,6 +103,17 @@ export default function EvaluationsPage() {
   const [editingCommentId, setEditingCommentId] = useState<number | null>(null) // 正在编辑的评论ID
   const [editingCommentContent, setEditingCommentContent] = useState<string>("") // 编辑中的评论内容
   const [editingCommentPrivate, setEditingCommentPrivate] = useState<boolean>(false) // 编辑中的评论是否私有
+  
+  // 共享相关状态
+  const [shares, setShares] = useState<EvaluationShare[]>([]) // 共享列表
+  const [shareSummary, setShareSummary] = useState<ShareSummary[]>([]) // 共享评分汇总
+  const [shareDialogOpen, setShareDialogOpen] = useState(false) // 共享对话框开关
+  const [shareFormData, setShareFormData] = useState({
+    shared_to_ids: [] as number[],
+    message: "",
+    deadline: "",
+  }) // 共享表单数据
+  const [isCreatingShare, setIsCreatingShare] = useState(false) // 是否正在创建共享
   
   // Popover 状态控制
   const [openPopovers, setOpenPopovers] = useState<{[key: string]: boolean}>({}) // 控制每个Popover的开关状态
@@ -693,7 +707,22 @@ export default function EvaluationsPage() {
     setEditingCommentId(null)
     setEditingCommentContent("")
     setEditingCommentPrivate(false)
-  }, [])
+
+    // 重置共享状态
+    setShares([])
+    setShareSummary([])
+    setShareFormData({
+      shared_to_ids: [],
+      message: "",
+      deadline: "",
+    })
+
+    // 如果是HR用户且评估状态是manager_evaluated，获取共享数据
+    if (isHR && evaluation.status === "manager_evaluated") {
+      fetchShares(evaluation.id)
+      fetchShareSummary(evaluation.id)
+    }
+  }, [isHR, fetchShares, fetchShareSummary])
 
   // 删除评估
   const handleDelete = async (evaluationId: number) => {
@@ -701,6 +730,87 @@ export default function EvaluationsPage() {
     if (!confirmed) return
     await evaluationApi.delete(evaluationId)
     fetchEvaluations()
+  }
+
+  // 获取共享列表
+  const fetchShares = useCallback(async (evaluationId: number) => {
+    try {
+      const response = await shareApi.getByEvaluation(evaluationId)
+      setShares(response.data)
+    } catch (error) {
+      console.error("获取共享列表失败:", error)
+      setShares([])
+    }
+  }, [])
+
+  // 获取共享评分汇总
+  const fetchShareSummary = useCallback(async (evaluationId: number) => {
+    try {
+      const response = await shareApi.getSummary(evaluationId)
+      setShareSummary(response.data)
+    } catch (error) {
+      console.error("获取共享评分汇总失败:", error)
+      setShareSummary([])
+    }
+  }, [])
+
+  // 创建共享
+  const handleCreateShare = async () => {
+    if (!selectedEvaluation || shareFormData.shared_to_ids.length === 0) return
+
+    try {
+      setIsCreatingShare(true)
+      const data = {
+        shared_to_ids: shareFormData.shared_to_ids,
+        message: shareFormData.message,
+        deadline: shareFormData.deadline || undefined,
+      }
+      
+      await shareApi.create(selectedEvaluation.id, data)
+      
+      // 刷新共享列表
+      fetchShares(selectedEvaluation.id)
+      
+      // 重置表单
+      setShareFormData({
+        shared_to_ids: [],
+        message: "",
+        deadline: "",
+      })
+      setShareDialogOpen(false)
+      
+      toast.success("共享创建成功")
+    } catch (error) {
+      console.error("创建共享失败:", error)
+      Alert({
+        title: "创建失败",
+        description: "创建共享失败，请重试",
+        variant: "destructive",
+      })
+    } finally {
+      setIsCreatingShare(false)
+    }
+  }
+
+  // 删除共享
+  const handleDeleteShare = async (shareId: number) => {
+    if (!selectedEvaluation) return
+
+    const confirmed = await Confirm("确认删除", "确定要取消此共享吗？")
+    if (!confirmed) return
+
+    try {
+      await shareApi.delete(selectedEvaluation.id, shareId)
+      fetchShares(selectedEvaluation.id)
+      toast.success("共享删除成功")
+    } catch (error) {
+      console.error("删除共享失败:", error)
+      Alert({
+        title: "删除失败",
+        description: "删除共享失败，请重试",
+        variant: "destructive",
+      })
+    }
   }
 
   // 当选中的评估或评论分页参数变化时，重新获取评论
@@ -1218,9 +1328,12 @@ export default function EvaluationsPage() {
                     }
                   }}
                 >
-                  <TabsList className="grid w-full grid-cols-2 mb-2">
+                  <TabsList className={`grid w-full mb-2 ${isHR && selectedEvaluation?.status === "manager_evaluated" ? "grid-cols-3" : "grid-cols-2"}`}>
                     <TabsTrigger value="details">评分详情</TabsTrigger>
                     <TabsTrigger value="summary">总结汇总</TabsTrigger>
+                    {isHR && selectedEvaluation?.status === "manager_evaluated" && (
+                      <TabsTrigger value="share">共享评分</TabsTrigger>
+                    )}
                   </TabsList>
 
                   <TabsContent value="details" className="space-y-4" ref={detailsRef}>
@@ -1957,6 +2070,127 @@ export default function EvaluationsPage() {
                       </CardContent>
                     </Card>
                   </TabsContent>
+
+                  {/* 共享评分Tab */}
+                  <TabsContent value="share" className="space-y-4">
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="flex items-center justify-between">
+                          <div className="flex items-center">
+                            <Eye className="w-5 h-5 mr-2" />
+                            共享评分管理
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setShareDialogOpen(true)}
+                          >
+                            <Plus className="w-4 h-4 mr-1" />
+                            添加共享
+                          </Button>
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        {/* 共享列表 */}
+                        {shares.length === 0 ? (
+                          <div className="text-center py-8">
+                            <div className="text-gray-500 mb-4">
+                              <Clock className="w-12 h-12 mx-auto mb-2" />
+                              <p>暂无共享评分</p>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="space-y-4">
+                            {shares.map((share) => (
+                              <div key={share.id} className="border rounded-lg p-4">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-3">
+                                    <div>
+                                      <div className="font-medium">{share.shared_to?.name}</div>
+                                      <div className="text-sm text-gray-500">{share.shared_to?.position}</div>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      {share.status === "pending" && (
+                                        <Badge variant="outline" className="text-yellow-600 border-yellow-600">
+                                          待评分
+                                        </Badge>
+                                      )}
+                                      {share.status === "completed" && (
+                                        <Badge variant="outline" className="text-green-600 border-green-600">
+                                          已完成
+                                        </Badge>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => handleDeleteShare(share.id)}
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </Button>
+                                  </div>
+                                </div>
+                                {share.message && (
+                                  <div className="mt-2 text-sm text-gray-600">
+                                    {share.message}
+                                  </div>
+                                )}
+                                {share.deadline && (
+                                  <div className="mt-2 text-sm text-gray-500">
+                                    截止时间: {new Date(share.deadline).toLocaleString()}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* 共享评分汇总 */}
+                        {shareSummary.length > 0 && (
+                          <div className="mt-6">
+                            <h4 className="font-medium mb-4">共享评分汇总</h4>
+                            <div className="space-y-4">
+                              {shareSummary.map((summary) => (
+                                <div key={summary.item_id} className="border rounded-lg p-4">
+                                  <div className="flex items-center justify-between mb-3">
+                                    <div className="font-medium">{summary.item_name}</div>
+                                    <div className="flex items-center gap-2">
+                                      <Star className="w-4 h-4 text-yellow-500" />
+                                      <span className="font-medium">
+                                        平均分: {summary.average_score.toFixed(1)}
+                                      </span>
+                                      <span className="text-sm text-gray-500">
+                                        ({summary.score_count}人评分)
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <div className="space-y-2">
+                                    {summary.scores.map((score, index) => (
+                                      <div key={index} className="flex items-center justify-between text-sm">
+                                        <span>{score.shared_to}</span>
+                                        <div className="flex items-center gap-2">
+                                          <span className="font-medium">
+                                            {score.score !== undefined ? score.score : "未评分"}
+                                          </span>
+                                          {score.comment && (
+                                            <span className="text-gray-500 max-w-xs truncate" title={score.comment}>
+                                              {score.comment}
+                                            </span>
+                                          )}
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  </TabsContent>
                 </Tabs>
               </div>
 
@@ -2003,6 +2237,64 @@ export default function EvaluationsPage() {
               </div>
             </>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* 共享对话框 */}
+      <Dialog open={shareDialogOpen} onOpenChange={setShareDialogOpen}>
+        <DialogContent className="sm:max-w-[600px]">
+          <DialogHeader>
+            <DialogTitle>创建共享评分</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="shared-employees">选择评分人员</Label>
+              <div className="mt-2">
+                <EmployeeSelector
+                  value={shareFormData.shared_to_ids}
+                  onChange={(ids) => setShareFormData(prev => ({ ...prev, shared_to_ids: ids }))}
+                  multiple
+                  placeholder="选择要共享给的人员"
+                />
+              </div>
+            </div>
+            
+            <div>
+              <Label htmlFor="share-message">共享说明</Label>
+              <Textarea
+                id="share-message"
+                placeholder="请输入共享说明，让被共享人员了解评分要求..."
+                value={shareFormData.message}
+                onChange={(e) => setShareFormData(prev => ({ ...prev, message: e.target.value }))}
+                rows={3}
+              />
+            </div>
+            
+            <div>
+              <Label htmlFor="share-deadline">截止时间（可选）</Label>
+              <Input
+                id="share-deadline"
+                type="datetime-local"
+                value={shareFormData.deadline}
+                onChange={(e) => setShareFormData(prev => ({ ...prev, deadline: e.target.value }))}
+              />
+            </div>
+            
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setShareDialogOpen(false)}
+              >
+                取消
+              </Button>
+              <Button
+                onClick={handleCreateShare}
+                disabled={isCreatingShare || shareFormData.shared_to_ids.length === 0}
+              >
+                {isCreatingShare ? "创建中..." : "创建共享"}
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
