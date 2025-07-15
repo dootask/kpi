@@ -66,7 +66,10 @@ export function Sidebar({ isMobileMenuOpen, setIsMobileMenuOpen }: SidebarProps)
       menus = [
         {
           category: "我的功能",
-          items: [{ name: "考核管理", href: "/evaluations", icon: FileText }],
+          items: [
+            { name: "考核管理", href: "/evaluations", icon: FileText },
+            { name: "协助评分", href: "/shares", icon: Users },
+          ],
         },
         {
           category: "系统功能",
@@ -93,7 +96,7 @@ export function Sidebar({ isMobileMenuOpen, setIsMobileMenuOpen }: SidebarProps)
 
   // 监听用户角色变化
   useEffect(() => {
-    if (!isHR && !["/evaluations", "/settings", "/help"].includes(pathname)) {
+    if (!isHR && !["/evaluations", "/shares", "/settings", "/help"].includes(pathname) && !pathname.startsWith("/shares/")) {
       router.push("/evaluations")
     }
   }, [isHR, router, pathname])

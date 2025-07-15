@@ -38,6 +38,8 @@ func InitDB() {
 		&KPIEvaluation{},
 		&KPIScore{},
 		&EvaluationComment{},
+		&EvaluationShare{},
+		&ShareScore{},
 		&SystemSetting{},
 	)
 	if err != nil {

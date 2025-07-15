@@ -77,13 +77,16 @@ type KPIEvaluation struct {
 	Status       string    `json:"status" gorm:"default:pending"` // pending, self_evaluated, manager_evaluated, pending_confirm, completed
 	TotalScore   float64   `json:"total_score"`
 	FinalComment string    `json:"final_comment"`
+	HasShares    bool      `json:"has_shares" gorm:"default:false"` // 是否有共享
+	ShareCount   int       `json:"share_count" gorm:"default:0"`    // 共享数量
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
 
 	// 关联关系
-	Employee Employee    `json:"employee,omitempty" gorm:"foreignKey:EmployeeID"`
-	Template KPITemplate `json:"template,omitempty" gorm:"foreignKey:TemplateID"`
-	Scores   []KPIScore  `json:"scores,omitempty" gorm:"foreignKey:EvaluationID"`
+	Employee Employee           `json:"employee,omitempty" gorm:"foreignKey:EmployeeID"`
+	Template KPITemplate        `json:"template,omitempty" gorm:"foreignKey:TemplateID"`
+	Scores   []KPIScore         `json:"scores,omitempty" gorm:"foreignKey:EvaluationID"`
+	Shares   []EvaluationShare  `json:"shares,omitempty" gorm:"foreignKey:EvaluationID"`
 }
 
 // KPI具体得分模型
@@ -120,6 +123,40 @@ type EvaluationComment struct {
 	// 关联关系
 	Evaluation KPIEvaluation `json:"evaluation,omitempty" gorm:"foreignKey:EvaluationID"`
 	User       Employee      `json:"user,omitempty" gorm:"foreignKey:UserID"`
+}
+
+// 绩效共享模型
+type EvaluationShare struct {
+	ID           uint       `json:"id" gorm:"primaryKey"`
+	EvaluationID uint       `json:"evaluation_id"`
+	SharedToID   uint       `json:"shared_to_id"`     // 被共享人员ID
+	SharedByID   uint       `json:"shared_by_id"`     // 共享人（HR）ID
+	Status       string     `json:"status" gorm:"default:pending"` // pending, completed, expired
+	Message      string     `json:"message"`          // 共享说明
+	Deadline     *time.Time `json:"deadline"`         // 评分截止时间
+	CreatedAt    time.Time  `json:"created_at"`
+	UpdatedAt    time.Time  `json:"updated_at"`
+
+	// 关联关系
+	Evaluation KPIEvaluation `json:"evaluation,omitempty" gorm:"foreignKey:EvaluationID"`
+	SharedTo   Employee      `json:"shared_to,omitempty" gorm:"foreignKey:SharedToID"`
+	SharedBy   Employee      `json:"shared_by,omitempty" gorm:"foreignKey:SharedByID"`
+	Scores     []ShareScore  `json:"scores,omitempty" gorm:"foreignKey:ShareID"`
+}
+
+// 共享评分模型
+type ShareScore struct {
+	ID        uint      `json:"id" gorm:"primaryKey"`
+	ShareID   uint      `json:"share_id"`
+	ItemID    uint      `json:"item_id"`
+	Score     *float64  `json:"score,omitempty"`
+	Comment   string    `json:"comment"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+
+	// 关联关系
+	Share EvaluationShare `json:"share,omitempty" gorm:"foreignKey:ShareID"`
+	Item  KPIItem         `json:"item,omitempty" gorm:"foreignKey:ItemID"`
 }
 
 // 系统设置模型
