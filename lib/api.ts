@@ -579,6 +579,40 @@ export interface SSEStatus {
   total_connections: number
 }
 
+// 备份API类型定义
+export interface BackupHistory {
+  file_name: string
+  file_size: number
+  created_at: string
+  file_type?: 'db' | 'sql' // 文件类型
+  download_url: string
+}
+
+export interface BackupResponse {
+  download_url: string
+  file_name: string
+  file_size: number
+  created_at: string
+  message: string
+}
+
+// 备份API
+export const backupApi = {
+  // 创建备份
+  create: (): Promise<BackupResponse> => api.post('/backup'),
+
+  // 获取备份历史
+  getHistory: (): Promise<{ data: BackupHistory[] }> => api.get('/backup'),
+
+  // 恢复备份
+  restore: (fileName: string): Promise<{ message: string }> =>
+    api.post(`/backup/restore/${fileName}`),
+
+  // 删除备份
+  delete: (fileName: string): Promise<{ message: string }> =>
+    api.delete(`/backup/${fileName}`),
+}
+
 // SSE API
 export const sseApi = {
   // 获取SSE状态

@@ -521,7 +521,7 @@ func ExportPeriodToExcel(c *gin.Context) {
 			}
 		}
 
-		sheetName := fmt.Sprintf("%s", evaluation.Employee.Name)
+		sheetName := evaluation.Employee.Name
 		// Excel工作表名称有字符限制，如果名称过长或有特殊字符，使用简化名称
 		if len(sheetName) > 31 {
 			sheetName = fmt.Sprintf("员工%d", idx+1)

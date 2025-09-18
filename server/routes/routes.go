@@ -39,6 +39,7 @@ func SetupRoutes(r *gin.RouterGroup) {
 	downloadRoutes := r.Group("/download")
 	{
 		downloadRoutes.GET("/exports/:randomKey", handlers.DownloadFile)
+		downloadRoutes.GET("/backups/:randomKey", handlers.DownloadBackup)
 	}
 
 	// SSE事件流（所有认证用户）
@@ -168,6 +169,17 @@ func SetupRoutes(r *gin.RouterGroup) {
 			exportRoutes.GET("/evaluation/:id", handlers.ExportEvaluationToExcel)
 			exportRoutes.GET("/department/:id", handlers.ExportDepartmentToExcel)
 			exportRoutes.GET("/period/:period", handlers.ExportPeriodToExcel)
+		}
+
+		// 备份管理（仅HR）
+		backupRoutes := protected.Group("/backup")
+		backupRoutes.Use(handlers.RoleMiddleware("hr"))
+		{
+			backupRoutes.POST("", handlers.CreateBackup)
+			backupRoutes.GET("", handlers.GetBackupHistory)
+			backupRoutes.GET("/download/:filename", handlers.GenerateBackupDownloadURL)
+			backupRoutes.POST("/restore/:filename", handlers.RestoreBackup)
+			backupRoutes.DELETE("/:filename", handlers.DeleteBackup)
 		}
 	}
 }

@@ -15,6 +15,7 @@ import {
   X,
   HelpCircle,
   MessageSquare,
+  Database,
 } from "lucide-react"
 import { useEffect, useMemo } from "react"
 import { useAuth } from "@/lib/auth-context"
@@ -81,6 +82,7 @@ export function Sidebar({ isMobileMenuOpen, setIsMobileMenuOpen }: SidebarProps)
         {
           category: "其他功能",
           items: [
+            { name: "备份还原", href: "/backup", icon: Database },
             { name: "系统设置", href: "/settings", icon: Settings, hidden: isDootask },
             { name: "帮助中心", href: "/help", icon: HelpCircle },
           ],
