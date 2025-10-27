@@ -54,6 +54,7 @@ import { Pagination, usePagination } from "@/components/pagination"
 import { LoadingInline } from "@/components/loading"
 import { toast } from "sonner"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { AxiosError } from "axios"
 
 export default function EvaluationsPage() {
   const { Alert, Confirm, getStatusBadge, isTouch } = useAppContext()
@@ -77,6 +78,12 @@ export default function EvaluationsPage() {
   const [paginationData, setPaginationData] = useState<PaginatedResponse<KPIEvaluation> | null>(null)
   const [statusFilter, setStatusFilter] = useState<string>("all")
   const [employeeFilter, setEmployeeFilter] = useState<string>("all")
+
+  // 周期筛选相关状态
+  const [periodFilter, setPeriodFilter] = useState<string>("")
+  const [yearFilter, setYearFilter] = useState<string>("")
+  const [monthFilter, setMonthFilter] = useState<string>("")
+  const [quarterFilter, setQuarterFilter] = useState<string>("")
 
   // 添加绩效视图Tab相关状态
   const [viewTab, setViewTab] = useState<"my" | "team">("my") // 默认显示我的绩效
@@ -142,6 +149,20 @@ export default function EvaluationsPage() {
         params.status = statusFilter
       }
 
+      // 周期筛选参数
+      if (periodFilter) {
+        params.period = periodFilter
+      }
+      if (yearFilter) {
+        params.year = yearFilter
+      }
+      if (monthFilter) {
+        params.month = monthFilter
+      }
+      if (quarterFilter) {
+        params.quarter = quarterFilter
+      }
+
       // 根据Tab和角色设置员工筛选
       if (viewTab === "my") {
         // 我的绩效：只显示自己的
@@ -177,7 +198,7 @@ export default function EvaluationsPage() {
     } finally {
       setLoading(false)
     }
-  }, [currentUser, currentPage, pageSize, statusFilter, employeeFilter, viewTab, isHR, isManager, refreshUnreadEvaluations])
+  }, [currentUser, currentPage, pageSize, statusFilter, employeeFilter, periodFilter, yearFilter, monthFilter, quarterFilter, viewTab, isHR, isManager, refreshUnreadEvaluations])
 
   // 获取模板列表
   const fetchTemplates = async () => {
@@ -401,6 +422,10 @@ export default function EvaluationsPage() {
     setViewTab(tab)
     setStatusFilter("all")
     setEmployeeFilter("all")
+    setPeriodFilter("")
+    setYearFilter("")
+    setMonthFilter("")
+    setQuarterFilter("")
     resetPagination()
   }
 
@@ -451,9 +476,13 @@ export default function EvaluationsPage() {
 
       // 成功提示
       Alert("创建成功", `已为 ${formData.employee_ids.length} 个员工创建考核`)
-    } catch (error) {
+    } catch (error: unknown) {
       console.error("创建评估失败:", error)
-      Alert("创建失败", "创建考核失败，请重试")
+      if (error instanceof AxiosError) {
+        Alert("创建失败", error.response?.data?.error || "创建考核失败，请重试")
+      } else {
+        Alert("创建失败", "创建考核失败，请重试")
+      }
     }
   }
 
@@ -1212,6 +1241,7 @@ export default function EvaluationsPage() {
               {loading && <LoadingInline />}
             </div>
             <div className="flex flex-wrap items-center gap-3">
+              {/* 状态筛选 */}
               <Select value={statusFilter} onValueChange={setStatusFilter}>
                 <SelectTrigger className="w-auto">
                   <SelectValue placeholder="状态筛选" />
@@ -1225,6 +1255,8 @@ export default function EvaluationsPage() {
                   <SelectItem value="completed">已完成</SelectItem>
                 </SelectContent>
               </Select>
+
+              {/* 员工筛选 */}
               {viewTab === "team" && (
                 <EmployeeCombobox
                   value={employeeFilter}
@@ -1233,11 +1265,107 @@ export default function EvaluationsPage() {
                   className="min-w-24 justify-between"
                 />
               )}
+
+              {/* 周期筛选 */}
+              <Select
+                value={periodFilter || "all"}
+                onValueChange={(value) => {
+                  setPeriodFilter(value === "all" ? "" : value)
+                  setMonthFilter("")
+                  setQuarterFilter("")
+                  resetPagination()
+                }}
+              >
+                <SelectTrigger className="w-auto">
+                  <SelectValue placeholder="周期筛选" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部周期</SelectItem>
+                  <SelectItem value="monthly">月度</SelectItem>
+                  <SelectItem value="quarterly">季度</SelectItem>
+                  <SelectItem value="yearly">年度</SelectItem>
+                </SelectContent>
+              </Select>
+
+              {/* 年份筛选 */}
+              <Select
+                value={yearFilter || "all"}
+                onValueChange={(value) => {
+                  setYearFilter(value === "all" ? "" : value)
+                  resetPagination()
+                }}
+              >
+                <SelectTrigger className="w-auto">
+                  <SelectValue placeholder="年份筛选" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部年份</SelectItem>
+                  {Array.from({ length: 10 }, (_, i) => {
+                    const year = new Date().getFullYear() - i
+                    return (
+                      <SelectItem key={year} value={year.toString()}>
+                        {year}年
+                      </SelectItem>
+                    )
+                  })}
+                </SelectContent>
+              </Select>
+
+              {/* 月份筛选 - 只在月度周期时显示 */}
+              {periodFilter === "monthly" && (
+                <Select
+                  value={monthFilter || "all"}
+                  onValueChange={(value) => {
+                    setMonthFilter(value === "all" ? "" : value)
+                    resetPagination()
+                  }}
+                >
+                  <SelectTrigger className="w-auto">
+                    <SelectValue placeholder="月份筛选" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">全部月份</SelectItem>
+                    {[...Array(12)].map((_, i) => (
+                      <SelectItem key={i + 1} value={(i + 1).toString()}>
+                        {i + 1}月
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+
+              {/* 季度筛选 - 只在季度周期时显示 */}
+              {periodFilter === "quarterly" && (
+                <Select
+                  value={quarterFilter || "all"}
+                  onValueChange={(value) => {
+                    setQuarterFilter(value === "all" ? "" : value)
+                    resetPagination()
+                  }}
+                >
+                  <SelectTrigger className="w-auto">
+                    <SelectValue placeholder="季度筛选" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">全部季度</SelectItem>
+                    <SelectItem value="1">第一季度</SelectItem>
+                    <SelectItem value="2">第二季度</SelectItem>
+                    <SelectItem value="3">第三季度</SelectItem>
+                    <SelectItem value="4">第四季度</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+
+              {/* 重置筛选 */}
               <Button
                 variant="outline"
                 onClick={() => {
                   setStatusFilter("all")
                   setEmployeeFilter("all")
+                  setPeriodFilter("")
+                  setYearFilter("")
+                  setMonthFilter("")
+                  setQuarterFilter("")
                   resetPagination()
                 }}
               >
@@ -1313,7 +1441,15 @@ export default function EvaluationsPage() {
                     <TableCell>{evaluation.template?.name}</TableCell>
                     <TableCell>{getPeriodValue(evaluation)}</TableCell>
                     <TableCell>
-                      <div className="text-lg font-semibold">{formatScore(evaluation.total_score)}</div>
+                      <div className="text-lg font-semibold">
+                        {formatScore(
+                          evaluation.scores?.reduce(
+                            (acc, score) =>
+                              acc +
+                              (score.final_score ?? score.hr_score ?? score.manager_score ?? score.self_score ?? 0), 0
+                          )
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell>{getStatusBadge(evaluation.status)}</TableCell>
                     <TableCell className="text-right">

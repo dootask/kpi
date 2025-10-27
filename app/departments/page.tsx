@@ -13,9 +13,10 @@ import { departmentApi, type Department, type PaginatedResponse, type Pagination
 import { useAppContext } from "@/lib/app-context"
 import { Pagination, usePagination } from "@/components/pagination"
 import { LoadingInline } from "@/components/loading"
+import { AxiosError } from "axios"
 
 export default function DepartmentsPage() {
-  const { Confirm } = useAppContext()
+  const { Confirm, Alert } = useAppContext()
   const [departments, setDepartments] = useState<Department[]>([])
   const [loading, setLoading] = useState(true)
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -94,8 +95,13 @@ export default function DepartmentsPage() {
       try {
         await departmentApi.delete(id)
         fetchDepartments()
-      } catch (error) {
+      } catch (error: unknown) {
         console.error("删除部门失败:", error)
+        if (error instanceof AxiosError) {
+          Alert("删除失败", error.response?.data?.error || "删除部门失败，请重试")
+        } else {
+          Alert("删除失败", "删除部门失败，请重试")
+        }
       }
     }
   }

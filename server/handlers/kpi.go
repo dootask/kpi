@@ -157,6 +157,11 @@ func GetEvaluations(c *gin.Context) {
 	status := c.Query("status")
 	employeeID := c.Query("employee_id")
 	departmentID := c.Query("department_id")
+	// 周期筛选参数
+	period := c.Query("period")
+	yearStr := c.Query("year")
+	monthStr := c.Query("month")
+	quarterStr := c.Query("quarter")
 
 	// 验证分页参数
 	if page < 1 {
@@ -167,7 +172,7 @@ func GetEvaluations(c *gin.Context) {
 	}
 
 	// 构建查询
-	query := models.DB.Preload("Employee.Department").Preload("Template").Preload("Scores")
+	query := models.DB.Preload("Employee.Department").Preload("Template").Preload("Scores").Preload("Scores.Item")
 
 	// 添加筛选条件
 	if status != "" {
@@ -178,6 +183,23 @@ func GetEvaluations(c *gin.Context) {
 	}
 	if departmentID != "" {
 		query = query.Where("employee_id IN (SELECT id FROM employees WHERE department_id = ?)", departmentID)
+	}
+
+	// 添加周期筛选条件
+	if period != "" {
+		query = query.Where("period = ?", period)
+	}
+	if yearStr != "" {
+		year, _ := strconv.Atoi(yearStr)
+		query = query.Where("year = ?", year)
+	}
+	if monthStr != "" {
+		month, _ := strconv.Atoi(monthStr)
+		query = query.Where("month = ?", month)
+	}
+	if quarterStr != "" {
+		quarter, _ := strconv.Atoi(quarterStr)
+		query = query.Where("quarter = ?", quarter)
 	}
 
 	// 获取总数
@@ -191,6 +213,23 @@ func GetEvaluations(c *gin.Context) {
 	}
 	if departmentID != "" {
 		countQuery = countQuery.Where("employee_id IN (SELECT id FROM employees WHERE department_id = ?)", departmentID)
+	}
+
+	// 在计数查询中也添加周期筛选条件
+	if period != "" {
+		countQuery = countQuery.Where("period = ?", period)
+	}
+	if yearStr != "" {
+		year, _ := strconv.Atoi(yearStr)
+		countQuery = countQuery.Where("year = ?", year)
+	}
+	if monthStr != "" {
+		month, _ := strconv.Atoi(monthStr)
+		countQuery = countQuery.Where("month = ?", month)
+	}
+	if quarterStr != "" {
+		quarter, _ := strconv.Atoi(quarterStr)
+		countQuery = countQuery.Where("quarter = ?", quarter)
 	}
 	if err := countQuery.Count(&total).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -240,8 +279,28 @@ func CreateEvaluation(c *gin.Context) {
 	// 开始数据库事务
 	tx := models.DB.Begin()
 
+	row := models.KPIEvaluation{}
+	result := tx.Preload("Employee").
+		Where("employee_id = ? AND template_id = ? AND period = ? AND year = ? AND month = ?",
+			evaluation.EmployeeID, evaluation.TemplateID, evaluation.Period, evaluation.Year, evaluation.Month).
+		Find(&row).Limit(1)
+	if result.Error != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "创建评估失败",
+		})
+		return
+	}
+	if row.ID > 0 {
+		tx.Rollback()
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": fmt.Sprintf("员工【%s】评估记录已存在", row.Employee.Name),
+		})
+		return
+	}
+
 	// 创建评估记录
-	result := tx.Create(&evaluation)
+	result = tx.Create(&evaluation)
 	if result.Error != nil {
 		tx.Rollback()
 		c.JSON(http.StatusInternalServerError, gin.H{

@@ -311,6 +311,12 @@ export interface PaginationParams {
 export interface EvaluationPaginationParams extends PaginationParams {
   status?: string
   employee_id?: string
+  department_id?: string
+  // 周期筛选参数
+  period?: string
+  year?: string
+  month?: string
+  quarter?: string
 }
 
 // 员工API

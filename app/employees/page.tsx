@@ -14,9 +14,10 @@ import { employeeApi, departmentApi, type Employee, type Department, type Pagina
 import { useAppContext } from "@/lib/app-context"
 import { Pagination, usePagination } from "@/components/pagination"
 import { LoadingInline } from "@/components/loading"
+import { AxiosError } from "axios"
 
 export default function EmployeesPage() {
-  const { Confirm } = useAppContext()
+  const { Confirm, Alert } = useAppContext()
   const [employees, setEmployees] = useState<Employee[]>([])
   const [departments, setDepartments] = useState<Department[]>([])
   const [managers, setManagers] = useState<Employee[]>([])
@@ -147,8 +148,13 @@ export default function EmployeesPage() {
       try {
         await employeeApi.delete(id)
         fetchEmployees()
-      } catch (error) {
+      } catch (error: unknown) {
         console.error("删除员工失败:", error)
+        if (error instanceof AxiosError) {
+          Alert("删除失败", error.response?.data?.error || "删除员工失败，请重试")
+        } else {
+          Alert("删除失败", "删除员工失败，请重试")
+        }
       }
     }
   }
