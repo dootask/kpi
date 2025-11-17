@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 
@@ -28,6 +29,7 @@ import {
   RefreshCcw,
   Loader2,
   XCircle,
+  Zap,
 } from "lucide-react"
 import {
   evaluationApi,
@@ -35,6 +37,8 @@ import {
   templateApi,
   commentApi,
   invitationApi,
+  performanceRuleApi,
+  employeeApi,
   type KPIEvaluation,
   type KPIScore,
   type KPITemplate,
@@ -43,6 +47,7 @@ import {
   type InvitedScore,
   type PaginatedResponse,
   type EvaluationPaginationParams,
+  type PerformanceRule,
 } from "@/lib/api"
 import { useAuth } from "@/lib/auth-context"
 import { useAppContext } from "@/lib/app-context"
@@ -55,6 +60,21 @@ import { LoadingInline } from "@/components/loading"
 import { toast } from "sonner"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 
+// 计算上个月和对应年份的函数
+const getLastMonth = () => {
+  const now = new Date()
+  const currentMonth = now.getMonth() + 1 // 1-12
+  const currentYear = now.getFullYear()
+  
+  if (currentMonth === 1) {
+    // 如果当前是1月，上个月是12月，年份减1
+    return { month: 12, year: currentYear - 1 }
+  } else {
+    // 否则月份减1，年份不变
+    return { month: currentMonth - 1, year: currentYear }
+  }
+}
+
 export default function EvaluationsPage() {
   const { Alert, Confirm, getStatusBadge, isTouch } = useAppContext()
   const { refreshUnreadEvaluations } = useUnreadContext()
@@ -65,13 +85,27 @@ export default function EvaluationsPage() {
   const [templates, setTemplates] = useState<KPITemplate[]>([])
   const [dialogOpen, setDialogOpen] = useState(false)
   const [scoreDialogOpen, setScoreDialogOpen] = useState(false)
+  const [submitObjectionDialogOpen, setSubmitObjectionDialogOpen] = useState(false) // 员工提交异议对话框
+  const [handleObjectionDialogOpen, setHandleObjectionDialogOpen] = useState(false) // HR处理异议对话框
   const [selectedEvaluation, setSelectedEvaluation] = useState<KPIEvaluation | null>(null)
   const [scores, setScores] = useState<KPIScore[]>([])
   const [activeTab, setActiveTab] = useState("details")
 
   const [isSubmittingSelfEvaluation, setIsSubmittingSelfEvaluation] = useState(false)
+  const [isSubmittingObjection, setIsSubmittingObjection] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  
+  // 员工提交异议表单状态
+  const [submitObjectionForm, setSubmitObjectionForm] = useState({
+    reason: "",
+  })
+  
+  // HR处理异议表单状态
+  const [handleObjectionForm, setHandleObjectionForm] = useState({
+    adjustedScore: "",
+    reason: "",
+  })
 
   // 分页相关状态
   const [paginationData, setPaginationData] = useState<PaginatedResponse<KPIEvaluation> | null>(null)
@@ -106,6 +140,10 @@ export default function EvaluationsPage() {
   const [editingCommentContent, setEditingCommentContent] = useState<string>("") // 编辑中的评论内容
   const [editingCommentPrivate, setEditingCommentPrivate] = useState<boolean>(false) // 编辑中的评论是否私有
 
+  // 绩效规则状态
+  const [performanceRule, setPerformanceRule] = useState<PerformanceRule | null>(null)
+  const performanceRuleEnabled = performanceRule?.enabled ?? false
+
   // Popover 状态控制
   const [openPopovers, setOpenPopovers] = useState<{ [key: string]: boolean }>({}) // 控制每个Popover的开关状态
 
@@ -118,13 +156,15 @@ export default function EvaluationsPage() {
     invitee_ids: [] as number[],
     message: "",
   }) // 邀请表单
+  
+  const lastMonthData = getLastMonth()
   const [formData, setFormData] = useState({
     employee_ids: [] as string[],
     template_id: "",
     period: "monthly",
-    year: new Date().getFullYear(),
-    month: new Date().getMonth() + 1,
-    quarter: Math.floor(new Date().getMonth() / 3) + 1,
+    year: lastMonthData.year,
+    month: lastMonthData.month,
+    quarter: Math.floor((lastMonthData.month - 1) / 3) + 1,
   })
 
   // 获取评估列表
@@ -150,14 +190,16 @@ export default function EvaluationsPage() {
         // 团队绩效：根据角色显示
         if (/^department:/.test(employeeFilter)) {
           params.department_id = employeeFilter.replace("department:", "")
-        } else if (employeeFilter !== "all") {
+        } else if (employeeFilter && employeeFilter !== "all") {
           params.employee_id = employeeFilter
         }
         // 如果不是HR
         if (!isHR) {
           if (isManager) {
-            // 如果是主管，则显示自己管理的部门绩效
-            params.department_id = currentUser?.department_id?.toString() || "-1"
+            // 主管默认查看直属下属（跨部门）
+            if (!params.employee_id) {
+              params.manager_id = currentUser?.id.toString()
+            }
           } else {
             // 如果是员工，则显示自己
             params.employee_id = currentUser?.id.toString()
@@ -224,6 +266,21 @@ export default function EvaluationsPage() {
       setInvitations([])
     }
   }
+
+  const fetchPerformanceRule = useCallback(async () => {
+    if (!isHR) {
+      setPerformanceRule(null)
+      return
+    }
+
+    try {
+      const response = await performanceRuleApi.get()
+      setPerformanceRule(response.data || null)
+    } catch (error) {
+      console.error("获取绩效规则失败:", error)
+      setPerformanceRule(null)
+    }
+  }, [isHR])
 
   // 创建邀请
   const handleCreateInvitation = async () => {
@@ -396,12 +453,155 @@ export default function EvaluationsPage() {
     fetchTemplates()
   }, [])
 
+  useEffect(() => {
+    fetchPerformanceRule()
+  }, [fetchPerformanceRule])
+
+  // 当对话框打开时，重置表单为上个月
+  useEffect(() => {
+    if (dialogOpen) {
+      const lastMonthReset = getLastMonth()
+      setFormData(prev => ({
+        ...prev,
+        year: lastMonthReset.year,
+        month: lastMonthReset.month,
+        quarter: Math.floor((lastMonthReset.month - 1) / 3) + 1,
+      }))
+    }
+  }, [dialogOpen])
+
+  useEffect(() => {
+    if (isHR && selectedEvaluation) {
+      fetchPerformanceRule()
+    }
+  }, [isHR, selectedEvaluation, fetchPerformanceRule])
+
   // 切换Tab时重置筛选和分页
   const handleTabChange = (tab: "my" | "team") => {
     setViewTab(tab)
     setStatusFilter("all")
     setEmployeeFilter("all")
     resetPagination()
+  }
+
+  // 一键创建：拷贝上个月的绩效模板
+  const handleQuickCreate = async () => {
+    try {
+      // 计算上个月的年月
+      const now = new Date()
+      const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+      const lastMonthYear = lastMonth.getFullYear()
+      const lastMonthMonth = lastMonth.getMonth() + 1
+
+      // 获取上个月的考核记录
+      const response = await evaluationApi.getAll({
+        period: "monthly",
+        year: lastMonthYear.toString(),
+        month: lastMonthMonth.toString(),
+        pageSize: 1000, // 获取所有记录
+      })
+
+      const lastMonthEvaluations = response.data || []
+
+      if (lastMonthEvaluations.length === 0) {
+        Alert("提示", "上个月没有考核记录，无法一键创建")
+        return
+      }
+
+      // 按模板和员工分组，获取唯一的模板和员工组合（排除已离职员工）
+      const templateEmployeeMap = new Map<string, Set<string>>()
+      lastMonthEvaluations.forEach(evaluation => {
+        if (evaluation.template_id && evaluation.employee_id && evaluation.employee?.is_active !== false) {
+          const templateKey = evaluation.template_id.toString()
+          if (!templateEmployeeMap.has(templateKey)) {
+            templateEmployeeMap.set(templateKey, new Set())
+          }
+          templateEmployeeMap.get(templateKey)!.add(evaluation.employee_id.toString())
+        }
+      })
+
+      if (templateEmployeeMap.size === 0) {
+        Alert("提示", "上个月没有有效的考核记录（已离职员工已排除），无法一键创建")
+        return
+      }
+
+      // 计算当前月份
+      const currentYear = now.getFullYear()
+      const currentMonth = now.getMonth() + 1
+
+      // 获取当前月的考核记录，用于检查是否已存在
+      const currentMonthResponse = await evaluationApi.getAll({
+        period: "monthly",
+        year: currentYear.toString(),
+        month: currentMonth.toString(),
+        pageSize: 1000, // 获取所有记录
+      })
+
+      const currentMonthEvaluations = currentMonthResponse.data || []
+      
+      // 构建当前月已存在的考核记录集合（格式：templateId-employeeId）
+      const existingEvaluations = new Set<string>()
+      currentMonthEvaluations.forEach(evaluation => {
+        if (evaluation.template_id && evaluation.employee_id) {
+          const key = `${evaluation.template_id}-${evaluation.employee_id}`
+          existingEvaluations.add(key)
+        }
+      })
+
+      // 过滤掉已存在的考核记录
+      const toCreate: Array<{ templateId: string; employeeId: string }> = []
+      templateEmployeeMap.forEach((employeeIds, templateId) => {
+        employeeIds.forEach(employeeId => {
+          const key = `${templateId}-${employeeId}`
+          if (!existingEvaluations.has(key)) {
+            toCreate.push({ templateId, employeeId })
+          }
+        })
+      })
+
+      if (toCreate.length === 0) {
+        Alert("提示", "本月所有员工的考核记录已存在，无需创建")
+        return
+      }
+
+      // 确认对话框
+      const confirmed = await Confirm(
+        "一键创建考核",
+        `将基于上个月（${lastMonthYear}年${lastMonthMonth}月）的考核模板，为 ${toCreate.length} 个员工创建本月（${currentYear}年${currentMonth}月）的考核。\n\n注意：已存在的考核记录将被跳过。是否继续？`
+      )
+
+      if (!confirmed) {
+        return
+      }
+
+      // 为每个模板和员工组合创建新的考核
+      const promises: Promise<{ data: KPIEvaluation }>[] = []
+
+      toCreate.forEach(({ templateId, employeeId }) => {
+        promises.push(
+          evaluationApi.create({
+            employee_id: parseInt(employeeId),
+            template_id: parseInt(templateId),
+            period: "monthly",
+            year: currentYear,
+            month: currentMonth,
+            status: "pending",
+            total_score: 0,
+            final_comment: "",
+            has_objection: false,
+            objection_reason: "",
+          })
+        )
+      })
+
+      await Promise.all(promises)
+
+      fetchEvaluations()
+      Alert("创建成功", `已为 ${toCreate.length} 个员工创建本月考核（基于上个月模板）`)
+    } catch (error) {
+      console.error("一键创建失败:", error)
+      Alert("创建失败", "一键创建考核失败，请重试")
+    }
   }
 
   // 创建新评估
@@ -421,8 +621,148 @@ export default function EvaluationsPage() {
     }
 
     try {
-      // 为每个选中的员工创建评估
-      const promises = formData.employee_ids.map(employeeId =>
+      // 获取当前选中的模板信息
+      const selectedTemplate = templates.find(t => t.id.toString() === formData.template_id)
+      const templateName = selectedTemplate?.name || "考核"
+
+      // 查询已存在的考核记录
+      const existingEvaluations: KPIEvaluation[] = []
+      const queryPromises = formData.employee_ids.map(employeeId =>
+        evaluationApi.getAll({
+          employee_id: employeeId,
+          year: formData.year.toString(),
+          month: formData.period === "monthly" ? formData.month?.toString() : undefined,
+          quarter: formData.period === "quarterly" ? formData.quarter?.toString() : undefined,
+          pageSize: 100, // 获取所有相关考核记录
+        })
+      )
+
+      const queryResults = await Promise.all(queryPromises)
+      queryResults.forEach(result => {
+        if (result.data) {
+          existingEvaluations.push(...result.data)
+        }
+      })
+
+      // 获取员工信息（用于显示员工姓名）
+      const employeeInfoPromises = formData.employee_ids.map(employeeId =>
+        employeeApi.getById(parseInt(employeeId))
+      )
+      const employeeInfoResults = await Promise.all(employeeInfoPromises)
+      const employeeMap = new Map<number, string>()
+      employeeInfoResults.forEach((result: { data?: { id: number; name: string } }) => {
+        if (result.data) {
+          employeeMap.set(result.data.id, result.data.name)
+        }
+      })
+
+      // 检查是否有完全相同的考核（同一员工、同一年、同一月、同一模板）
+      const duplicateSameTemplate: Array<{ employeeId: string; employeeName: string }> = []
+      // 检查是否有不同模板的考核（同一员工、同一年、同一月，但模板不同）
+      const duplicateDifferentTemplate: Array<{ employeeId: string; employeeName: string; templateName: string }> = []
+
+      formData.employee_ids.forEach(employeeId => {
+        const employeeNumId = parseInt(employeeId)
+        const employeeName = employeeMap.get(employeeNumId) || "未知员工"
+
+        // 查找该员工在同一年同一月的所有考核
+        const employeeEvaluations = existingEvaluations.filter(
+          evaluation =>
+            evaluation.employee_id === employeeNumId &&
+            evaluation.year === formData.year &&
+            (formData.period === "monthly"
+              ? evaluation.month === formData.month
+              : formData.period === "quarterly"
+                ? evaluation.quarter === formData.quarter
+                : true) // 年度考核不需要检查月份或季度
+        )
+
+        if (employeeEvaluations.length > 0) {
+          // 检查是否有完全相同的模板
+          const sameTemplateEval = employeeEvaluations.find(
+            evaluation => evaluation.template_id.toString() === formData.template_id
+          )
+
+          if (sameTemplateEval) {
+            // 存在完全相同的考核
+            duplicateSameTemplate.push({ employeeId, employeeName })
+          } else {
+            // 存在不同模板的考核
+            const otherTemplateEval = employeeEvaluations[0]
+            const otherTemplate = templates.find(t => t.id === otherTemplateEval.template_id)
+            duplicateDifferentTemplate.push({
+              employeeId,
+              employeeName,
+              templateName: otherTemplate?.name || "未知考核",
+            })
+          }
+        }
+      })
+
+      // 根据考核周期生成周期描述
+      const periodText =
+        formData.period === "monthly"
+          ? "本月"
+          : formData.period === "quarterly"
+            ? `本季度（${formData.year}年Q${formData.quarter}）`
+            : `本年（${formData.year}年）`
+
+      // 如果有完全相同的考核，提示错误并阻止创建
+      if (duplicateSameTemplate.length > 0) {
+        const employeeNames = duplicateSameTemplate.map(d => d.employeeName).join("、")
+        const message =
+          formData.period === "monthly"
+            ? `本月${employeeNames}已存在${templateName}绩效考核`
+            : `${periodText}${employeeNames}已存在${templateName}绩效考核`
+        Alert("创建失败", message)
+        return
+      }
+
+      // 如果有不同模板的考核，提示确认是否继续创建
+      if (duplicateDifferentTemplate.length > 0) {
+        const duplicateMessages = duplicateDifferentTemplate.map(d => {
+          if (formData.period === "monthly") {
+            return `本月${d.employeeName}已存在${d.templateName}绩效考核`
+          } else {
+            return `${periodText}${d.employeeName}已存在${d.templateName}绩效考核`
+          }
+        })
+        const message = `${duplicateMessages.join("\n")}\n\n是否继续创建？`
+
+        const confirmed = await Confirm("确认创建", message)
+        if (!confirmed) {
+          return
+        }
+      }
+
+      // 为每个选中的员工创建评估（排除已存在相同模板的）
+      const employeesToCreate = formData.employee_ids.filter(employeeId => {
+        const employeeNumId = parseInt(employeeId)
+        const employeeEvaluations = existingEvaluations.filter(
+          evaluation =>
+            evaluation.employee_id === employeeNumId &&
+            evaluation.year === formData.year &&
+            (formData.period === "monthly"
+              ? evaluation.month === formData.month
+              : formData.period === "quarterly"
+                ? evaluation.quarter === formData.quarter
+                : true)
+        )
+        return !employeeEvaluations.some(evaluation => evaluation.template_id.toString() === formData.template_id)
+      })
+
+      if (employeesToCreate.length === 0) {
+        const periodText =
+          formData.period === "monthly"
+            ? `本月（${formData.year}年${formData.month}月）`
+            : formData.period === "quarterly"
+              ? `本季度（${formData.year}年Q${formData.quarter}）`
+              : `本年（${formData.year}年）`
+        Alert("提示", `所选员工${periodText}已存在相同的绩效考核，无需创建`)
+        return
+      }
+
+      const promises = employeesToCreate.map(employeeId =>
         evaluationApi.create({
           employee_id: parseInt(employeeId),
           template_id: parseInt(formData.template_id),
@@ -433,6 +773,8 @@ export default function EvaluationsPage() {
           status: "pending",
           total_score: 0,
           final_comment: "",
+          has_objection: false,
+          objection_reason: "",
         })
       )
 
@@ -440,17 +782,24 @@ export default function EvaluationsPage() {
 
       fetchEvaluations()
       setDialogOpen(false)
+      // 重置表单时，月份和年份设置为上个月
+      const lastMonthReset = getLastMonth()
       setFormData({
         employee_ids: [],
         template_id: "",
         period: "monthly",
-        year: new Date().getFullYear(),
-        month: new Date().getMonth() + 1,
-        quarter: Math.floor(new Date().getMonth() / 3) + 1,
+        year: lastMonthReset.year,
+        month: lastMonthReset.month,
+        quarter: Math.floor((lastMonthReset.month - 1) / 3) + 1,
       })
 
       // 成功提示
-      Alert("创建成功", `已为 ${formData.employee_ids.length} 个员工创建考核`)
+      const skippedCount = formData.employee_ids.length - employeesToCreate.length
+      let successMessage = `已为 ${employeesToCreate.length} 个员工创建考核`
+      if (skippedCount > 0) {
+        successMessage += `（已跳过 ${skippedCount} 个已存在的考核）`
+      }
+      Alert("创建成功", successMessage)
     } catch (error) {
       console.error("创建评估失败:", error)
       Alert("创建失败", "创建考核失败，请重试")
@@ -641,7 +990,10 @@ export default function EvaluationsPage() {
       }
 
       // 确认提交主管评分
-      const result = await Confirm("主管评分", "确定要提交主管评分吗？提交后将无法修改，评估将进入HR审核阶段。")
+      const confirmMessage = performanceRuleEnabled
+        ? "确定要提交主管评分吗？提交后系统将根据绩效规则自动计算HR评分并进入员工确认阶段。"
+        : "确定要提交主管评分吗？提交后将无法修改，评估将进入HR审核阶段。"
+      const result = await Confirm("主管评分", confirmMessage)
       if (!result) {
         return
       }
@@ -649,18 +1001,28 @@ export default function EvaluationsPage() {
 
     // HR审核阶段的特殊处理
     if (stage === "hr") {
-      // 检查是否所有项目都已确定最终得分
-      const unconfirmedItems = scores.filter(score => isUnknown(score.hr_score))
-      if (unconfirmedItems.length > 0) {
-        await Alert("HR审核", `请先确认所有项目的最终得分。还有 ${unconfirmedItems.length} 个项目待确认。`)
-        scrollToNextUnscored(unconfirmedItems[0].id)
-        return
-      }
+      // 如果启用了绩效规则，HR评分已经自动计算完成，直接确认即可
+      if (performanceRuleEnabled) {
+        const result = await Confirm(
+          "HR审核",
+          "已启用绩效规则，HR评分已自动计算完成。确定要进入员工确认阶段吗？"
+        )
+        if (!result) {
+          return
+        }
+      } else {
+        // 未启用绩效规则，需要HR手动填写所有项目的评分
+        const unconfirmedItems = scores.filter(score => isUnknown(score.hr_score))
+        if (unconfirmedItems.length > 0) {
+          await Alert("HR审核", `请先确认所有项目的最终得分。还有 ${unconfirmedItems.length} 个项目待确认。`)
+          scrollToNextUnscored(unconfirmedItems[0].id)
+          return
+        }
 
-      // 确认完成HR审核
-      const result = await Confirm("HR审核", "确定要完成HR审核吗？提交后将无法再修改，评估将进入员工确认阶段。")
-      if (!result) {
-        return
+        const result = await Confirm("HR审核", "确定要完成HR审核吗？提交后将无法再修改，评估将进入员工确认阶段。")
+        if (!result) {
+          return
+        }
       }
     }
 
@@ -709,12 +1071,24 @@ export default function EvaluationsPage() {
           totalScore = scores.reduce((acc, score) => acc + (score.manager_score || 0), 0)
           break
         case "hr":
-        case "confirm":
-          // HR审核或员工确认最终得分后，总分为最终得分总和
+          // HR审核后，总分为最终得分总和
           totalScore = scores.reduce(
             (acc, score) => acc + (score.final_score || score.hr_score || score.manager_score || 0),
             0
           )
+          break
+        case "confirm":
+          // 员工确认最终得分时
+          // 如果存在异议处理（有final_comment），保持HR调整后的total_score
+          if (selectedEvaluation?.final_comment && selectedEvaluation.final_comment.trim()) {
+            totalScore = selectedEvaluation.total_score
+          } else {
+            // 否则，总分为最终得分总和
+            totalScore = scores.reduce(
+              (acc, score) => acc + (score.final_score || score.hr_score || score.manager_score || 0),
+              0
+            )
+          }
           break
       }
 
@@ -739,10 +1113,18 @@ export default function EvaluationsPage() {
 
       fetchEvaluations()
       if (selectedEvaluation) {
+        // 如果有异议处理，确保使用调整后的total_score
+        const updatedTotalScore = 
+          stage === "confirm" && 
+          selectedEvaluation.final_comment && 
+          selectedEvaluation.final_comment.trim()
+            ? selectedEvaluation.total_score // 使用异议处理调整后的分数
+            : finalTotalScore // 使用后端返回的分数
+        
         setSelectedEvaluation({
           ...selectedEvaluation,
           status: finalStatus,
-          total_score: finalTotalScore,
+          total_score: updatedTotalScore,
         })
         await fetchEvaluationScores(selectedEvaluation.id)
       }
@@ -756,7 +1138,12 @@ export default function EvaluationsPage() {
           await Alert("自评", "自评提交成功！请等待上级主管评分。")
         }
       } else if (stage === "manager") {
-        await Alert("主管评分", "主管评分提交成功！评估已转入HR审核阶段。")
+        // 如果启用了绩效规则，状态会自动变为pending_confirm
+        if (finalStatus === "pending_confirm" && performanceRuleEnabled) {
+          await Alert("主管评分", "主管评分提交成功！系统已根据绩效规则自动计算HR评分，评估已进入员工确认阶段。")
+        } else {
+          await Alert("主管评分", "主管评分提交成功！评估已转入HR审核阶段。")
+        }
       } else if (stage === "hr") {
         await Alert("HR审核", "HR审核完成！请等待员工确认最终得分。")
       } else if (stage === "confirm") {
@@ -769,6 +1156,112 @@ export default function EvaluationsPage() {
       if (stage === "self") {
         setIsSubmittingSelfEvaluation(false)
       }
+    }
+  }
+
+  // 员工提交异议
+  const handleSubmitObjection = async () => {
+    if (!selectedEvaluation) return
+
+    // 验证表单
+    if (!submitObjectionForm.reason.trim()) {
+      await Alert("表单验证", "请填写异议原因。")
+      return
+    }
+
+    const result = await Confirm(
+      "提交异议",
+      "确定要提交异议吗？提交后将无法撤回或修改。"
+    )
+    if (!result) {
+      return
+    }
+
+    try {
+      setIsSubmittingObjection(true)
+
+      // 提交异议
+      const response = await evaluationApi.submitObjection(selectedEvaluation.id, {
+        reason: submitObjectionForm.reason.trim(),
+      })
+
+      // 刷新数据
+      fetchEvaluations()
+      
+      // 更新选中的评估信息
+      if (response.data) {
+        setSelectedEvaluation(response.data)
+      }
+
+      // 关闭对话框并重置表单
+      setSubmitObjectionDialogOpen(false)
+      setSubmitObjectionForm({
+        reason: "",
+      })
+
+      await Alert("提交异议", "异议已成功提交！上级和HR将收到通知。")
+    } catch (error) {
+      console.error("提交异议失败:", error)
+      Alert("提交失败", "提交异议失败，请重试。")
+    } finally {
+      setIsSubmittingObjection(false)
+    }
+  }
+
+  // HR处理异议
+  const handleObjectionHandle = async () => {
+    if (!selectedEvaluation) return
+
+    // 验证表单
+    if (!handleObjectionForm.adjustedScore || !handleObjectionForm.reason.trim()) {
+      await Alert("表单验证", "请填写调整后的最终得分和处理原因。")
+      return
+    }
+
+    const adjustedScore = parseFloat(handleObjectionForm.adjustedScore)
+    if (isNaN(adjustedScore) || adjustedScore < 0) {
+      await Alert("表单验证", "请输入有效的最终得分（大于等于0的数字）。")
+      return
+    }
+
+    const result = await Confirm(
+      "处理异议",
+      `确定要将最终得分从 ${selectedEvaluation.total_score} 调整为 ${adjustedScore} 吗？`
+    )
+    if (!result) {
+      return
+    }
+
+    try {
+      setIsSubmittingObjection(true)
+
+      // HR处理异议
+      const response = await evaluationApi.handleObjection(selectedEvaluation.id, {
+        total_score: adjustedScore,
+        final_comment: handleObjectionForm.reason.trim(),
+      })
+
+      // 刷新数据
+      fetchEvaluations()
+      
+      // 更新选中的评估信息
+      if (response.data) {
+        setSelectedEvaluation(response.data)
+      }
+
+      // 关闭对话框并重置表单
+      setHandleObjectionDialogOpen(false)
+      setHandleObjectionForm({
+        adjustedScore: "",
+        reason: "",
+      })
+
+      await Alert("处理异议", "异议已成功处理！员工将收到通知。")
+    } catch (error) {
+      console.error("处理异议失败:", error)
+      Alert("提交失败", "处理异议失败，请重试。")
+    } finally {
+      setIsSubmittingObjection(false)
     }
   }
 
@@ -929,6 +1422,11 @@ export default function EvaluationsPage() {
     return evaluations // 后端已经处理了分页和筛选，前端直接使用
   }, [currentUser, evaluations])
 
+  // 用于统计的过滤函数，排除已离职员工
+  const getStatisticsEvaluations = useMemo(() => {
+    return getFilteredEvaluations.filter(e => e.employee?.is_active !== false)
+  }, [getFilteredEvaluations])
+
   // 根据评估状态获取得分标签
   const getScoreLabel = (evaluationStatus: string) => {
     switch (evaluationStatus) {
@@ -940,7 +1438,7 @@ export default function EvaluationsPage() {
   }
 
   // 检查是否可以进行某个操作
-  const canPerformAction = (evaluation: KPIEvaluation, action: "self" | "manager" | "hr" | "invite" | "confirm") => {
+  const canPerformAction = (evaluation: KPIEvaluation, action: "self" | "manager" | "hr" | "invite" | "confirm" | "submitObjection" | "handleObjection") => {
     if (!currentUser) return false
 
     switch (action) {
@@ -959,11 +1457,22 @@ export default function EvaluationsPage() {
         // HR只能审核主管评估的考核
         return evaluation.status === "manager_evaluated" && isHR
       case "invite":
-        // HR可以邀请员工进行考核
-        return ["manager_evaluated", "pending_confirm", "completed"].includes(evaluation.status) && isHR
+        // HR可以邀请员工进行考核（自评完成后即可邀请，无需等待主管评估）
+        return ["self_evaluated", "manager_evaluated", "pending_confirm", "completed"].includes(evaluation.status) && isHR
       case "confirm":
-        // HR可以确认员工考核
+        // 员工可以确认最终得分
         return evaluation.status === "pending_confirm" && evaluation.employee_id === currentUser.id
+      case "submitObjection":
+        // 员工可以在待确认状态时提交异议（且未提交过或已处理的异议）
+        return (
+          evaluation.status === "pending_confirm" &&
+          evaluation.employee_id === currentUser.id &&
+          !evaluation.has_objection &&
+          !evaluation.objection_reason
+        )
+      case "handleObjection":
+        // HR可以在有异议时处理异议
+        return evaluation.status === "pending_confirm" && evaluation.has_objection && isHR
       default:
         return false
     }
@@ -1009,13 +1518,14 @@ export default function EvaluationsPage() {
           <p className="text-muted-foreground mt-1 sm:mt-2">管理员工绩效考核流程</p>
         </div>
         {isHR && (
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-            <DialogTrigger asChild>
-              <Button className="w-full sm:w-auto lg:mt-8">
-                <Plus className="w-4 h-4 mr-2" />
-                创建考核
-              </Button>
-            </DialogTrigger>
+          <div className="flex flex-wrap gap-2 w-full sm:w-auto lg:mt-8">
+            <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+              <DialogTrigger asChild>
+                <Button className="w-full sm:w-auto">
+                  <Plus className="w-4 h-4 mr-2" />
+                  创建考核
+                </Button>
+              </DialogTrigger>
             <DialogContent className="w-[95vw] sm:max-w-md mx-auto">
               <DialogHeader>
                 <DialogTitle>创建新考核</DialogTitle>
@@ -1135,6 +1645,15 @@ export default function EvaluationsPage() {
               </form>
             </DialogContent>
           </Dialog>
+            <Button
+              variant="outline"
+              onClick={handleQuickCreate}
+              className="w-full sm:w-auto"
+            >
+              <Zap className="w-4 h-4 mr-2" />
+              一键创建
+            </Button>
+          </div>
         )}
       </div>
 
@@ -1146,7 +1665,7 @@ export default function EvaluationsPage() {
             <Award className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-xl sm:text-2xl font-bold">{getFilteredEvaluations.length}</div>
+            <div className="text-xl sm:text-2xl font-bold">{getStatisticsEvaluations.length}</div>
             <p className="text-xs text-muted-foreground">全部考核项目</p>
           </CardContent>
         </Card>
@@ -1158,7 +1677,7 @@ export default function EvaluationsPage() {
           <CardContent>
             <div className="text-xl sm:text-2xl font-bold">
               {
-                getFilteredEvaluations.filter(e =>
+                getStatisticsEvaluations.filter(e =>
                   ["pending", "self_evaluated", "manager_evaluated", "pending_confirm"].includes(e.status)
                 ).length
               }
@@ -1173,7 +1692,7 @@ export default function EvaluationsPage() {
           </CardHeader>
           <CardContent>
             <div className="text-xl sm:text-2xl font-bold">
-              {getFilteredEvaluations.filter(e => e.status === "completed").length}
+              {getStatisticsEvaluations.filter(e => e.status === "completed").length}
             </div>
             <p className="text-xs text-muted-foreground">已完成的考核</p>
           </CardContent>
@@ -1185,9 +1704,9 @@ export default function EvaluationsPage() {
           </CardHeader>
           <CardContent>
             <div className="text-xl sm:text-2xl font-bold">
-              {getFilteredEvaluations.length > 0
+              {getStatisticsEvaluations.length > 0
                 ? formatScore(
-                    getFilteredEvaluations.reduce((acc, e) => acc + e.total_score, 0) / getFilteredEvaluations.length
+                    getStatisticsEvaluations.reduce((acc, e) => acc + e.total_score, 0) / getStatisticsEvaluations.length
                   )
                 : 0}
             </div>
@@ -1231,6 +1750,7 @@ export default function EvaluationsPage() {
                   onValueChange={setEmployeeFilter}
                   placeholder="员工筛选"
                   className="min-w-24 justify-between"
+                  includeInactive={isHR}
                 />
               )}
               <Button
@@ -1309,13 +1829,49 @@ export default function EvaluationsPage() {
                         </div>
                       </div>
                     </TableCell>
-                    <TableCell>{evaluation.employee?.department?.name}</TableCell>
+                    <TableCell>
+                      {evaluation.employee?.is_active === false ? (
+                        <span className="text-muted-foreground">已离职</span>
+                      ) : (
+                        evaluation.employee?.department?.name
+                      )}
+                    </TableCell>
                     <TableCell>{evaluation.template?.name}</TableCell>
                     <TableCell>{getPeriodValue(evaluation)}</TableCell>
                     <TableCell>
                       <div className="text-lg font-semibold">{formatScore(evaluation.total_score)}</div>
                     </TableCell>
-                    <TableCell>{getStatusBadge(evaluation.status)}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        {evaluation.employee?.is_active === false ? (
+                          (() => {
+                            const getStatusLabel = (status: string) => {
+                              switch (status) {
+                                case "pending": return "待自评"
+                                case "self_evaluated": return "待主管评估"
+                                case "manager_evaluated": return "待HR审核"
+                                case "pending_confirm": return "待确认"
+                                case "completed": return "已完成"
+                                default: return "未知状态"
+                              }
+                            }
+                            return (
+                              <Badge variant="secondary" className="text-gray-600 border-gray-600 bg-gray-100">
+                                {getStatusLabel(evaluation.status)}
+                              </Badge>
+                            )
+                          })()
+                        ) : (
+                          getStatusBadge(evaluation.status)
+                        )}
+                        {(evaluation.has_objection ||
+                          (evaluation.objection_reason && evaluation.status === "pending_confirm")) && (
+                          <span className="text-xs text-orange-600 flex items-center gap-1">
+                            <span aria-hidden="true">⚠️</span> 异议
+                          </span>
+                        )}
+                      </div>
+                    </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end space-x-2">
                         <Button variant="outline" size="sm" onClick={() => handleViewDetails(evaluation)}>
@@ -1548,6 +2104,9 @@ export default function EvaluationsPage() {
                         <div className="bg-indigo-50/80 dark:bg-indigo-950/50 border border-indigo-200 dark:border-indigo-800 rounded-lg p-4">
                           <h4 className="font-medium text-indigo-900 dark:text-indigo-100 mb-2">🔍 HR审核指导</h4>
                           <ul className="text-sm text-indigo-800 dark:text-indigo-200 space-y-1">
+                        {performanceRuleEnabled && (
+                          <li>• 已启用绩效规则，提交审核时系统会自动按配置计算HR评分</li>
+                        )}
                             <li>• 审核员工自评与上级评分的合理性和一致性</li>
                             <li>• 检查评分是否符合公司绩效标准和政策</li>
                             <li>• 确认最终评分并可进行必要的调整</li>
@@ -1620,7 +2179,7 @@ export default function EvaluationsPage() {
                         <div className="bg-purple-50/80 dark:bg-purple-950/50 border border-purple-200 dark:border-purple-800 rounded-lg p-4">
                           <div className="flex items-center justify-between mb-3">
                             <h4 className="font-medium text-purple-900 dark:text-purple-100">🤝 邀请评分</h4>
-                            {canPerformAction(selectedEvaluation, "hr") && (
+                            {isHR && (
                               <Dialog open={invitationDialogOpen} onOpenChange={setInvitationDialogOpen}>
                                 <DialogTrigger asChild>
                                   <Button variant="outline" size="sm">
@@ -2229,12 +2788,14 @@ export default function EvaluationsPage() {
                             <h3 className="text-2xl font-bold">总分统计</h3>
                             <div className="text-4xl font-bold text-blue-600 mt-2">
                               {formatScore(
-                                scores.reduce(
-                                  (acc, score) =>
-                                    acc +
-                                    (score.final_score ?? score.hr_score ?? score.manager_score ?? score.self_score ?? 0),
-                                  0
-                                )
+                                selectedEvaluation?.total_score !== undefined
+                                  ? selectedEvaluation.total_score
+                                  : scores.reduce(
+                                      (acc, score) =>
+                                        acc +
+                                        (score.final_score ?? score.hr_score ?? score.manager_score ?? score.self_score ?? 0),
+                                      0
+                                    )
                               )}
                             </div>
                             <p className="text-muted-foreground">
@@ -2263,7 +2824,11 @@ export default function EvaluationsPage() {
                             </div>
                             <div>
                               <div className="text-lg font-semibold">
-                                {formatScore(scores.reduce((acc, score) => acc + (score.final_score ?? 0), 0))}
+                                {formatScore(
+                                  selectedEvaluation?.final_comment && selectedEvaluation.final_comment.trim()
+                                    ? selectedEvaluation.total_score
+                                    : scores.reduce((acc, score) => acc + (score.final_score ?? 0), 0)
+                                )}
                               </div>
                               <div className="text-sm text-muted-foreground">最终得分</div>
                             </div>
@@ -2271,6 +2836,83 @@ export default function EvaluationsPage() {
                         </div>
                       </CardContent>
                     </Card>
+
+                    {/* 异议状态显示 */}
+                    {(selectedEvaluation?.has_objection ||
+                      (selectedEvaluation?.objection_reason && selectedEvaluation.status === "pending_confirm")) && (
+                      <Card className="border-orange-200 dark:border-orange-800">
+                        <CardContent className="p-4">
+                          <div className="space-y-3">
+                            <div className="flex items-center gap-2">
+                              <h3 className="text-lg font-semibold text-orange-600 dark:text-orange-400">
+                                {selectedEvaluation?.has_objection ? "异议处理中" : "异议已处理，待确认"}
+                              </h3>
+                              <Badge variant="outline" className="text-xs border-orange-300 text-orange-600">
+                                {selectedEvaluation?.has_objection ? "待HR处理" : "待员工确认"}
+                              </Badge>
+                            </div>
+                            {selectedEvaluation.objection_reason && (
+                              <div className="bg-orange-50 dark:bg-orange-950/50 rounded-lg p-3 border border-orange-200 dark:border-orange-800">
+                                <Label className="text-sm font-medium text-orange-900 dark:text-orange-100 mb-2 block">
+                                  员工异议原因：
+                                </Label>
+                                <p className="text-sm text-orange-800 dark:text-orange-200 whitespace-pre-wrap">
+                                  {selectedEvaluation.objection_reason}
+                                </p>
+                              </div>
+                            )}
+                            {selectedEvaluation?.has_objection && isHR && (
+                              <p className="text-xs text-muted-foreground">
+                                请点击&ldquo;处理异议&rdquo;按钮进行处理
+                              </p>
+                            )}
+                            {(selectedEvaluation?.has_objection ||
+                              selectedEvaluation.status === "pending_confirm") &&
+                              (isManager || currentUser?.id === selectedEvaluation.employee_id) && (
+                                <p className="text-xs text-muted-foreground">
+                                  {selectedEvaluation?.has_objection
+                                    ? "异议已提交，等待HR处理"
+                                    : "HR已处理异议，等待您确认最终得分"}
+                                </p>
+                              )}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )}
+
+                    {/* 异议处理说明（HR已处理） */}
+                    {selectedEvaluation?.final_comment && selectedEvaluation.final_comment.trim() && !selectedEvaluation.has_objection && (
+                      <Card>
+                        <CardContent className="p-4">
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-2">
+                              <h3 className="text-lg font-semibold">异议处理说明</h3>
+                              <Badge variant="outline" className="text-xs">
+                                已处理
+                              </Badge>
+                            </div>
+                            {selectedEvaluation.objection_reason && (
+                              <div className="bg-orange-50 dark:bg-orange-950/50 rounded-lg p-3 border border-orange-200 dark:border-orange-800">
+                                <Label className="text-sm font-medium text-orange-900 dark:text-orange-100 mb-2 block">
+                                  员工异议原因：
+                                </Label>
+                                <p className="text-sm text-orange-800 dark:text-orange-200 whitespace-pre-wrap">
+                                  {selectedEvaluation.objection_reason}
+                                </p>
+                              </div>
+                            )}
+                            <div className="bg-muted/50 rounded-lg p-3 border">
+                              <p className="text-sm text-foreground whitespace-pre-wrap">
+                                {selectedEvaluation.final_comment}
+                              </p>
+                            </div>
+                            <p className="text-xs text-muted-foreground">
+                              最终得分已从系统计算值调整为 {formatScore(selectedEvaluation.total_score)} 分
+                            </p>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )}
 
                     {/* 绩效评论卡片 */}
                     <Card className="mt-4">
@@ -2508,6 +3150,35 @@ export default function EvaluationsPage() {
                       确认最终得分
                     </Button>
                   )}
+                  {canPerformAction(selectedEvaluation, "submitObjection") && (
+                    <Button
+                      onClick={() => {
+                        setSubmitObjectionForm({ reason: "" })
+                        setSubmitObjectionDialogOpen(true)
+                      }}
+                      variant="outline"
+                      className="w-full sm:w-auto"
+                    >
+                      提出异议
+                    </Button>
+                  )}
+                  {canPerformAction(selectedEvaluation, "handleObjection") && (
+                    <Button
+                      onClick={() => {
+                        if (selectedEvaluation) {
+                          setHandleObjectionForm({
+                            adjustedScore: selectedEvaluation.total_score.toString(),
+                            reason: "",
+                          })
+                          setHandleObjectionDialogOpen(true)
+                        }
+                      }}
+                      variant="outline"
+                      className="w-full sm:w-auto"
+                    >
+                      处理异议
+                    </Button>
+                  )}
                   <Button variant="outline" onClick={() => setScoreDialogOpen(false)} className="w-full sm:w-auto">
                     关闭
                   </Button>
@@ -2515,6 +3186,142 @@ export default function EvaluationsPage() {
               </div>
             </>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* 员工提交异议对话框 */}
+      <Dialog open={submitObjectionDialogOpen} onOpenChange={setSubmitObjectionDialogOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>提出异议</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="bg-yellow-50 dark:bg-yellow-950/50 border border-yellow-200 dark:border-yellow-800 rounded-lg p-3">
+              <p className="text-sm text-yellow-800 dark:text-yellow-200">
+                ⚠️ 提交异议后将无法撤回或修改，请谨慎填写。
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="submit-objection-reason">
+                异议原因 <span className="text-red-500">*</span>
+              </Label>
+              <Textarea
+                id="submit-objection-reason"
+                value={submitObjectionForm.reason}
+                onChange={(e) =>
+                  setSubmitObjectionForm({
+                    ...submitObjectionForm,
+                    reason: e.target.value,
+                  })
+                }
+                placeholder="请详细说明您的异议原因"
+                rows={6}
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setSubmitObjectionDialogOpen(false)
+                setSubmitObjectionForm({ reason: "" })
+              }}
+              disabled={isSubmittingObjection}
+            >
+              取消
+            </Button>
+            <Button onClick={handleSubmitObjection} disabled={isSubmittingObjection}>
+              {isSubmittingObjection ? "提交中..." : "提交异议"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* HR处理异议对话框 */}
+      <Dialog open={handleObjectionDialogOpen} onOpenChange={setHandleObjectionDialogOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>处理异议</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            {selectedEvaluation && (
+              <>
+                {selectedEvaluation.has_objection && selectedEvaluation.objection_reason && (
+                  <div className="bg-blue-50 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
+                    <Label className="text-sm font-medium text-blue-900 dark:text-blue-100 mb-2 block">
+                      员工异议原因：
+                    </Label>
+                    <p className="text-sm text-blue-800 dark:text-blue-200 whitespace-pre-wrap">
+                      {selectedEvaluation.objection_reason}
+                    </p>
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <Label htmlFor="handle-current-score">当前最终得分</Label>
+                  <Input
+                    id="handle-current-score"
+                    value={selectedEvaluation.total_score}
+                    readOnly
+                    className="bg-muted"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="handle-adjusted-score">
+                    调整后的最终得分 <span className="text-red-500">*</span>
+                  </Label>
+                  <Input
+                    id="handle-adjusted-score"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={handleObjectionForm.adjustedScore}
+                    onChange={(e) =>
+                      setHandleObjectionForm({
+                        ...handleObjectionForm,
+                        adjustedScore: e.target.value,
+                      })
+                    }
+                    placeholder="请输入调整后的最终得分"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="handle-objection-reason">
+                    处理原因 <span className="text-red-500">*</span>
+                  </Label>
+                  <Textarea
+                    id="handle-objection-reason"
+                    value={handleObjectionForm.reason}
+                    onChange={(e) =>
+                      setHandleObjectionForm({
+                        ...handleObjectionForm,
+                        reason: e.target.value,
+                      })
+                    }
+                    placeholder="请详细说明处理原因"
+                    rows={4}
+                  />
+                </div>
+              </>
+            )}
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setHandleObjectionDialogOpen(false)
+                setHandleObjectionForm({
+                  adjustedScore: "",
+                  reason: "",
+                })
+              }}
+              disabled={isSubmittingObjection}
+            >
+              取消
+            </Button>
+            <Button onClick={handleObjectionHandle} disabled={isSubmittingObjection}>
+              {isSubmittingObjection ? "处理中..." : "处理异议"}
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

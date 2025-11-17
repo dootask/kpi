@@ -26,6 +26,10 @@ const (
 	EventSelfScoreUpdated    = "self_score_updated"
 	EventManagerScoreUpdated = "manager_score_updated"
 	EventHRScoreUpdated      = "hr_score_updated"
+
+	// 异议相关事件
+	EventObjectionSubmitted = "objection_submitted" // 员工提交异议
+	EventObjectionHandled   = "objection_handled"   // HR处理异议
 )
 
 // 通知服务

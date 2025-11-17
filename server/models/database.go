@@ -41,6 +41,7 @@ func InitDB() {
 		&EvaluationInvitation{},
 		&InvitedScore{},
 		&SystemSetting{},
+		&PerformanceRule{},
 	)
 	if err != nil {
 		log.Fatal("数据库迁移失败:", err)
@@ -54,9 +55,11 @@ func CreateTestData() {
 	// 检查是否已有数据
 	var count int64
 	var count2 int64
+	var ruleCount int64
 	DB.Model(&Department{}).Count(&count)
 	DB.Model(&KPITemplate{}).Count(&count2)
-	if count > 0 && count2 > 0 {
+	DB.Model(&PerformanceRule{}).Count(&ruleCount)
+	if count > 0 && count2 > 0 && ruleCount > 0 {
 		log.Println("测试数据已存在，跳过创建")
 		return
 	}
@@ -69,6 +72,7 @@ func CreateTestData() {
 		CreateTestDataForUser()
 	}
 	CreateTestDataForTemplate()
+	CreateTestDataForPerformanceRule()
 
 	log.Println("测试数据创建完成")
 }
@@ -155,6 +159,18 @@ func CreateTestDataForTemplate() {
 	for _, setting := range settings {
 		DB.Create(&setting)
 	}
+}
+
+// 创建测试数据（绩效规则）
+func CreateTestDataForPerformanceRule() {
+	var count int64
+	DB.Model(&PerformanceRule{}).Count(&count)
+	if count > 0 {
+		return
+	}
+
+	defaultRule := DefaultPerformanceRule()
+	DB.Create(&defaultRule)
 }
 
 // 辅助函数：获取uint指针

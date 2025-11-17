@@ -16,6 +16,7 @@ import {
   HelpCircle,
   MessageSquare,
   Database,
+  Scale,
 } from "lucide-react"
 import { useEffect, useMemo } from "react"
 import { useAuth } from "@/lib/auth-context"
@@ -77,6 +78,7 @@ export function Sidebar({ isMobileMenuOpen, setIsMobileMenuOpen }: SidebarProps)
             { name: "部门管理", href: "/departments", icon: Building },
             { name: "员工管理", href: "/employees", icon: Users },
             { name: "KPI模板", href: "/templates", icon: ClipboardList },
+            { name: "绩效规则", href: "/performance-rules", icon: Scale },
           ],
         },
         {

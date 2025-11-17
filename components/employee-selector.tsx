@@ -12,7 +12,7 @@ import { Checkbox } from "./ui/checkbox"
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover"
 import { Command, CommandEmpty, CommandGroup, CommandItem, CommandList, CommandSeparator } from "./ui/command"
 import { CommandInputExpand } from "./ui/command.expand"
-import { employeeApi, departmentApi, Department } from "@/lib/api"
+import { employeeApi, departmentApi, Department, PaginationParams } from "@/lib/api"
 import { useAuth } from "@/lib/auth-context"
 import { useAppContext } from "@/lib/app-context"
 
@@ -20,6 +20,7 @@ export interface Employee {
   id: number
   name: string
   position: string
+  is_active?: boolean
   department?: {
     name: string
   }
@@ -51,15 +52,20 @@ export function EmployeeSelector({
   const [employees, setEmployees] = useState<Employee[]>([])
   const [loading, setLoading] = useState(true)
 
-  // 获取员工列表
+  // 获取员工列表（只获取在职员工）
   const fetchEmployees = async (search: string) => {
     setLoading(true)
     try {
-      const response = await employeeApi.getAll({ search, pageSize: search ? 10 : 100 })
+      const response = await employeeApi.getAll({ search, pageSize: search ? 10 : 100, is_active: true })
       setEmployees(prev => {
         const newEmployees = response.data || []
         const newEmployeeIds = newEmployees.map(employee => employee.id.toString())
-        return [...newEmployees, ...prev.filter(employee => !newEmployeeIds.includes(employee.id.toString()))]
+        // 过滤掉已离职员工
+        const filteredPrev = prev.filter(employee => {
+          // 如果新数据中有这个员工，使用新数据；否则检查旧数据是否在职
+          return newEmployeeIds.includes(employee.id.toString()) || employee.is_active !== false
+        })
+        return [...newEmployees, ...filteredPrev.filter(employee => !newEmployeeIds.includes(employee.id.toString()))]
       })
     } finally {
       setLoading(false)
@@ -354,6 +360,7 @@ interface EmployeeComboboxProps {
   contentClassName?: string
   align?: "start" | "center" | "end",
   checkIcon?: boolean
+  includeInactive?: boolean // 是否包含已离职员工
 }
 
 interface ComboboxOption {
@@ -361,6 +368,7 @@ interface ComboboxOption {
   type: "special" | "department" | "employee"
   name: string
   position: string
+  is_active?: boolean
   department?: {
     name: string
   }
@@ -375,25 +383,49 @@ export function EmployeeCombobox({
   contentClassName,
   align = "center",
   checkIcon = false,
+  includeInactive = false,
 }: EmployeeComboboxProps) {
   const { isTouch } = useAppContext()
-  const { isHR, user } = useAuth()
+  const { isHR, isManager, user } = useAuth()
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState("")
   const [employees, setEmployees] = useState<Employee[]>([])
   const [departments, setDepartments] = useState<Department[]>([])
 
+  const fetchSubordinates = useCallback(async () => {
+    if (!user?.id) return
+    setLoading(true)
+    try {
+      const response = await employeeApi.getSubordinates(user.id)
+      setEmployees(response.data || [])
+      setDepartments([])
+    } catch (error) {
+      console.error("获取下属失败:", error)
+      setEmployees([])
+      setDepartments([])
+    } finally {
+      setLoading(false)
+    }
+  }, [user?.id])
+
   const fetchData = useCallback(async (search: string) => {
+    if (!isHR && isManager) {
+      return
+    }
     setLoading(true)
     try {
       // 并行获取员工和部门数据
+      // 如果 includeInactive 为 true，则获取所有员工（包括已离职的）
+      const employeeParams: PaginationParams = {
+        search,
+        pageSize: 100,
+        department_id: !isHR ? user?.department_id?.toString() : undefined,
+        ...(includeInactive ? {} : { is_active: true }),
+      }
+
       const [employeeResponse, departmentResponse] = await Promise.all([
-        employeeApi.getAll({
-          search,
-          pageSize: 100,
-          department_id: !isHR ? user?.department_id?.toString() : undefined,
-        }),
+        employeeApi.getAll(employeeParams),
         !isHR ? Promise.resolve({ data: [] }) : departmentApi.getAll({ search, pageSize: 100 })
       ])
 
@@ -415,7 +447,7 @@ export function EmployeeCombobox({
     } finally {
       setLoading(false)
     }
-  }, [isHR, user?.department_id])
+  }, [isHR, isManager, user?.department_id, includeInactive])
 
   const groups = [
     {
@@ -461,6 +493,7 @@ export function EmployeeCombobox({
         type: "employee",
         name: emp.name,
         position: emp.position,
+        is_active: emp.is_active,
         department: emp.department,
       })
     })
@@ -469,6 +502,13 @@ export function EmployeeCombobox({
   }, [employees, departments])
 
   useEffect(() => {
+    if (!isHR && isManager) {
+      if (employees.length === 0) {
+        fetchSubordinates()
+      }
+      return
+    }
+
     const timer = setTimeout(
       () => {
         fetchData(searchTerm)
@@ -476,7 +516,7 @@ export function EmployeeCombobox({
       searchTerm ? 500 : 0
     )
     return () => clearTimeout(timer)
-  }, [searchTerm, fetchData])
+  }, [searchTerm, fetchData, isHR, isManager, fetchSubordinates, employees.length])
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -518,8 +558,14 @@ export function EmployeeCombobox({
                       >
                         <div className="flex w-full items-center justify-between gap-2" title={option.position}>
                           <div className="flex-1 min-w-0 flex items-center justify-between gap-2">
-                            <div className={cn("shrink-0 text-foreground truncate", value === option.id ? "text-blue-600" : "")}>{option.name}</div>
-                            {option.department?.name && <div className="text-sm text-muted-foreground/80 font-normal truncate">{option.department?.name}</div>}
+                            <div className="flex items-center gap-2">
+                              <div className={cn("shrink-0 text-foreground truncate", value === option.id ? "text-blue-600" : "")}>{option.name}</div>
+                            </div>
+                            {option.is_active === false ? (
+                              <div className="text-sm text-muted-foreground/80 font-normal truncate">已离职</div>
+                            ) : (
+                              option.department?.name && <div className="text-sm text-muted-foreground/80 font-normal truncate">{option.department?.name}</div>
+                            )}
                           </div>
                           {checkIcon && <Check className={value === option.id ? "opacity-100" : "opacity-0"} />}
                         </div>

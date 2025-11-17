@@ -8,8 +8,6 @@ github.com/creack/pty v1.1.9/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ3
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
-github.com/dootask/tools/server/go v0.0.0-20250716160050-ecb1e6de2b73 h1:h77oVnQjMiuTTjnLCiJQrUUl9GfiTgK1hP9E2vzClQg=
-github.com/dootask/tools/server/go v0.0.0-20250716160050-ecb1e6de2b73/go.mod h1:QTdgJGF8hr4pPTl7200zQbYJ2K0ag7UX5l2Tlm6LhgU=
 github.com/dootask/tools/server/go v0.0.0-20250717040353-7e9cc89be08c h1:TaUYF5MtdSoBg0tzNEqq5Xf2XZzhyw2zZSPrBgmC/UA=
 github.com/dootask/tools/server/go v0.0.0-20250717040353-7e9cc89be08c/go.mod h1:QTdgJGF8hr4pPTl7200zQbYJ2K0ag7UX5l2Tlm6LhgU=
 github.com/gabriel-vasile/mimetype v1.4.2 h1:w5qFW6JKBz9Y393Y4q372O9A7cUSequkh1Q7OhCmWKU=

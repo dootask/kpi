@@ -88,6 +88,13 @@ func SetupRoutes(r *gin.RouterGroup) {
 			templateRoutes.GET("/:id/items", handlers.GetTemplateItems)
 		}
 
+		// 绩效规则管理（仅HR）
+		performanceRuleRoutes := protected.Group("/performance-rules")
+		{
+			performanceRuleRoutes.GET("", handlers.RoleMiddleware("hr"), handlers.GetPerformanceRule)
+			performanceRuleRoutes.PUT("", handlers.RoleMiddleware("hr"), handlers.UpdatePerformanceRule)
+		}
+
 		// KPI考核项目管理（HR和管理员）
 		itemRoutes := protected.Group("/items")
 		{
@@ -118,6 +125,10 @@ func SetupRoutes(r *gin.RouterGroup) {
 			// 邀请评分管理（HR发起邀请）
 			evaluationRoutes.POST("/:id/invitations", handlers.RoleMiddleware("hr"), handlers.CreateInvitation)
 			evaluationRoutes.GET("/:id/invitations", handlers.RoleMiddleware("hr"), handlers.GetEvaluationInvitations)
+
+			// 异议处理
+			evaluationRoutes.POST("/:id/objection", handlers.SubmitObjection)                                      // 员工提交异议
+			evaluationRoutes.PUT("/:id/objection/handle", handlers.RoleMiddleware("hr"), handlers.HandleObjection) // HR处理异议
 		}
 
 		// 邀请评分管理

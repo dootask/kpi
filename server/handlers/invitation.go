@@ -48,15 +48,16 @@ func CreateInvitation(c *gin.Context) {
 		return
 	}
 
-	// 验证评估是否存在且状态为manager_evaluated
+	// 验证评估是否存在且状态为self_evaluated或manager_evaluated
 	var evaluation models.KPIEvaluation
 	if err := models.DB.Preload("Template").Preload("Employee").First(&evaluation, evalID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "评估不存在"})
 		return
 	}
 
-	if evaluation.Status != "manager_evaluated" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "只能在主管评估完成后发起邀请"})
+	// 允许在自评完成后或主管评估完成后发起邀请
+	if evaluation.Status != "self_evaluated" && evaluation.Status != "manager_evaluated" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "只能在员工自评完成后或主管评估完成后发起邀请"})
 		return
 	}
 
@@ -231,11 +232,11 @@ func GetMyInvitations(c *gin.Context) {
 		pageSize = 10
 	}
 
-	// 构建查询条件 - 只查询评估对象存在的邀请
+	// 构建查询条件 - 只查询评估对象存在的邀请，排除已离职员工
 	query := models.DB.Model(&models.EvaluationInvitation{}).
 		Joins("JOIN kpi_evaluations ON evaluation_invitations.evaluation_id = kpi_evaluations.id").
 		Joins("JOIN employees ON kpi_evaluations.employee_id = employees.id").
-		Where("evaluation_invitations.invitee_id = ?", userID)
+		Where("evaluation_invitations.invitee_id = ? AND employees.is_active = ?", userID, true)
 	if status != "" && status != "all" {
 		query = query.Where("evaluation_invitations.status = ?", status)
 	}
@@ -254,12 +255,12 @@ func GetMyInvitations(c *gin.Context) {
 		Preload("Inviter").
 		Joins("JOIN kpi_evaluations ON evaluation_invitations.evaluation_id = kpi_evaluations.id").
 		Joins("JOIN employees ON kpi_evaluations.employee_id = employees.id").
-		Where("evaluation_invitations.invitee_id = ?", userID)
-	
+		Where("evaluation_invitations.invitee_id = ? AND employees.is_active = ?", userID, true)
+
 	if status != "" && status != "all" {
 		queryBuilder = queryBuilder.Where("evaluation_invitations.status = ?", status)
 	}
-	
+
 	if err := queryBuilder.Order("evaluation_invitations.created_at DESC").Offset(offset).Limit(pageSize).Find(&invitations).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取邀请列表失败"})
 		return
@@ -302,11 +303,11 @@ func GetMySentInvitations(c *gin.Context) {
 		pageSize = 10
 	}
 
-	// 构建查询条件 - 只查询评估对象存在的邀请
+	// 构建查询条件 - 只查询评估对象存在的邀请，排除已离职员工
 	query := models.DB.Model(&models.EvaluationInvitation{}).
 		Joins("JOIN kpi_evaluations ON evaluation_invitations.evaluation_id = kpi_evaluations.id").
 		Joins("JOIN employees ON kpi_evaluations.employee_id = employees.id").
-		Where("evaluation_invitations.inviter_id = ?", userID)
+		Where("evaluation_invitations.inviter_id = ? AND employees.is_active = ?", userID, true)
 	if status != "" && status != "all" {
 		query = query.Where("evaluation_invitations.status = ?", status)
 	}
@@ -325,12 +326,12 @@ func GetMySentInvitations(c *gin.Context) {
 		Preload("Invitee").
 		Joins("JOIN kpi_evaluations ON evaluation_invitations.evaluation_id = kpi_evaluations.id").
 		Joins("JOIN employees ON kpi_evaluations.employee_id = employees.id").
-		Where("evaluation_invitations.inviter_id = ?", userID)
-	
+		Where("evaluation_invitations.inviter_id = ? AND employees.is_active = ?", userID, true)
+
 	if status != "" && status != "all" {
 		queryBuilder = queryBuilder.Where("evaluation_invitations.status = ?", status)
 	}
-	
+
 	if err := queryBuilder.Order("evaluation_invitations.created_at DESC").Offset(offset).Limit(pageSize).Find(&invitations).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取邀请列表失败"})
 		return

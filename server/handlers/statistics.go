@@ -56,11 +56,14 @@ func GetDashboardStats(c *gin.Context) {
 	}
 
 	// 获取基本统计数据（员工数和部门数不受时间筛选影响）
-	models.DB.Model(&models.Employee{}).Count(&stats.TotalEmployees)
+	// 只统计在职员工
+	models.DB.Model(&models.Employee{}).Where("is_active = ?", true).Count(&stats.TotalEmployees)
 	models.DB.Model(&models.Department{}).Count(&stats.TotalDepartments)
 
-	// 构建评估数据的时间筛选查询
-	baseQuery := models.DB.Model(&models.KPIEvaluation{})
+	// 构建评估数据的时间筛选查询（只统计在职员工的评估）
+	baseQuery := models.DB.Model(&models.KPIEvaluation{}).
+		Joins("JOIN employees ON kpi_evaluations.employee_id = employees.id").
+		Where("employees.is_active = ?", true)
 
 	// 根据时间筛选条件构建查询
 	if period != "" {
@@ -77,10 +80,16 @@ func GetDashboardStats(c *gin.Context) {
 	// 获取筛选后的评估统计数据
 	baseQuery.Count(&stats.TotalEvaluations)
 
-	// 创建baseQuery的副本来分别查询不同状态的数据
-	pendingQuery := models.DB.Model(&models.KPIEvaluation{})
-	completedQuery := models.DB.Model(&models.KPIEvaluation{})
-	avgQuery := models.DB.Model(&models.KPIEvaluation{})
+	// 创建baseQuery的副本来分别查询不同状态的数据（只统计在职员工的评估）
+	pendingQuery := models.DB.Model(&models.KPIEvaluation{}).
+		Joins("JOIN employees ON kpi_evaluations.employee_id = employees.id").
+		Where("employees.is_active = ?", true)
+	completedQuery := models.DB.Model(&models.KPIEvaluation{}).
+		Joins("JOIN employees ON kpi_evaluations.employee_id = employees.id").
+		Where("employees.is_active = ?", true)
+	avgQuery := models.DB.Model(&models.KPIEvaluation{}).
+		Joins("JOIN employees ON kpi_evaluations.employee_id = employees.id").
+		Where("employees.is_active = ?", true)
 
 	// 应用相同的时间筛选条件
 	if period != "" {
@@ -110,9 +119,11 @@ func GetDashboardStats(c *gin.Context) {
 	avgQuery.Select("AVG(total_score) as avg_score").Where("status = ?", "completed").Scan(&avgResult)
 	stats.AverageScore = avgResult.AvgScore
 
-	// 获取最近的评估记录（应用相同的时间筛选）
+	// 获取最近的评估记录（应用相同的时间筛选，只显示在职员工的评估）
 	var recentEvals []models.KPIEvaluation
-	recentQuery := models.DB.Preload("Employee.Department").Preload("Template")
+	recentQuery := models.DB.Preload("Employee.Department").Preload("Template").
+		Joins("JOIN employees ON kpi_evaluations.employee_id = employees.id").
+		Where("employees.is_active = ?", true)
 	if period != "" {
 		if period == "monthly" && month != "" {
 			recentQuery = recentQuery.Where("period = ? AND year = ? AND month = ?", "monthly", year, month)
@@ -123,7 +134,7 @@ func GetDashboardStats(c *gin.Context) {
 			recentQuery = recentQuery.Where("(period = ? OR period = ?) AND year = ?", "yearly", year, year)
 		}
 	}
-	recentQuery.Order("created_at DESC").Limit(10).Find(&recentEvals)
+	recentQuery.Order("kpi_evaluations.created_at DESC").Limit(10).Find(&recentEvals)
 
 	// 构建RecentEvaluation结构体
 	for _, eval := range recentEvals {
@@ -185,13 +196,13 @@ func GetDepartmentStats(c *gin.Context) {
 		return
 	}
 
-	// 获取员工数量
-	models.DB.Model(&models.Employee{}).Where("department_id = ?", departmentId).Count(&stats.EmployeeCount)
+	// 获取员工数量（只统计在职员工）
+	models.DB.Model(&models.Employee{}).Where("department_id = ? AND is_active = ?", departmentId, true).Count(&stats.EmployeeCount)
 
-	// 获取评估数量和平均分
+	// 获取评估数量和平均分（只统计在职员工）
 	models.DB.Model(&models.KPIEvaluation{}).
 		Joins("JOIN employees ON kpi_evaluations.employee_id = employees.id").
-		Where("employees.department_id = ?", departmentId).
+		Where("employees.department_id = ? AND employees.is_active = ?", departmentId, true).
 		Count(&stats.EvaluationCount)
 
 	var avgResult struct {
@@ -200,7 +211,7 @@ func GetDepartmentStats(c *gin.Context) {
 	models.DB.Model(&models.KPIEvaluation{}).
 		Select("AVG(total_score) as avg_score").
 		Joins("JOIN employees ON kpi_evaluations.employee_id = employees.id").
-		Where("employees.department_id = ? AND kpi_evaluations.status = ?", departmentId, "completed").
+		Where("employees.department_id = ? AND employees.is_active = ? AND kpi_evaluations.status = ?", departmentId, true, "completed").
 		Scan(&avgResult)
 	stats.AverageScore = avgResult.AvgScore
 
@@ -216,7 +227,7 @@ func GetDepartmentStats(c *gin.Context) {
 
 		models.DB.Model(&models.KPIEvaluation{}).
 			Joins("JOIN employees ON kpi_evaluations.employee_id = employees.id").
-			Where("employees.department_id = ? AND kpi_evaluations.period LIKE ?", departmentId, month+"%").
+			Where("employees.department_id = ? AND employees.is_active = ? AND kpi_evaluations.period LIKE ?", departmentId, true, month+"%").
 			Count(&monthStats.EvaluationCount)
 
 		var monthAvg struct {
@@ -225,7 +236,7 @@ func GetDepartmentStats(c *gin.Context) {
 		models.DB.Model(&models.KPIEvaluation{}).
 			Select("AVG(total_score) as avg_score").
 			Joins("JOIN employees ON kpi_evaluations.employee_id = employees.id").
-			Where("employees.department_id = ? AND kpi_evaluations.period LIKE ? AND kpi_evaluations.status = ?", departmentId, month+"%", "completed").
+			Where("employees.department_id = ? AND employees.is_active = ? AND kpi_evaluations.period LIKE ? AND kpi_evaluations.status = ?", departmentId, true, month+"%", "completed").
 			Scan(&monthAvg)
 
 		stats.MonthlyStats = append(stats.MonthlyStats, struct {
@@ -248,7 +259,7 @@ func GetDepartmentStats(c *gin.Context) {
 	models.DB.Model(&models.KPIEvaluation{}).
 		Select("employee_id, AVG(total_score) as average_score").
 		Joins("JOIN employees ON kpi_evaluations.employee_id = employees.id").
-		Where("employees.department_id = ? AND kpi_evaluations.status = ?", departmentId, "completed").
+		Where("employees.department_id = ? AND employees.is_active = ? AND kpi_evaluations.status = ?", departmentId, true, "completed").
 		Group("employee_id").
 		Order("average_score DESC").
 		Limit(5).
@@ -431,15 +442,17 @@ func GetTrends(c *gin.Context) {
 		}
 
 		models.DB.Model(&models.KPIEvaluation{}).
-			Where("period LIKE ? AND status = ?", pattern, "completed").
+			Joins("JOIN employees ON kpi_evaluations.employee_id = employees.id").
+			Where("kpi_evaluations.period LIKE ? AND kpi_evaluations.status = ? AND employees.is_active = ?", pattern, "completed", true).
 			Count(&periodStats.EvaluationCount)
 
 		var avgResult struct {
 			AvgScore float64
 		}
 		models.DB.Model(&models.KPIEvaluation{}).
-			Select("AVG(total_score) as avg_score").
-			Where("period LIKE ? AND status = ?", pattern, "completed").
+			Select("AVG(kpi_evaluations.total_score) as avg_score").
+			Joins("JOIN employees ON kpi_evaluations.employee_id = employees.id").
+			Where("kpi_evaluations.period LIKE ? AND kpi_evaluations.status = ? AND employees.is_active = ?", pattern, "completed", true).
 			Scan(&avgResult)
 
 		trends.ScoreTrends = append(trends.ScoreTrends, struct {
@@ -464,7 +477,7 @@ func GetTrends(c *gin.Context) {
 		Select("departments.name as department_name, AVG(kpi_evaluations.total_score) as average_score, COUNT(*) as evaluation_count").
 		Joins("JOIN employees ON kpi_evaluations.employee_id = employees.id").
 		Joins("JOIN departments ON employees.department_id = departments.id").
-		Where("kpi_evaluations.status = ?", "completed").
+		Where("kpi_evaluations.status = ? AND employees.is_active = ?", "completed", true).
 		Group("departments.id, departments.name").
 		Order("average_score DESC").
 		Scan(&deptTrends)
@@ -641,10 +654,10 @@ func GetStatisticsData(c *gin.Context) {
 		var stat DepartmentStat
 		stat.Name = dept.Name
 
-		// 总评估数
+		// 总评估数（只统计在职员工）
 		query := models.DB.Model(&models.KPIEvaluation{}).
 			Joins("JOIN employees ON kpi_evaluations.employee_id = employees.id").
-			Where("employees.department_id = ?", dept.ID)
+			Where("employees.department_id = ? AND employees.is_active = ?", dept.ID, true)
 
 		switch period {
 		case "monthly":
@@ -682,25 +695,28 @@ func GetStatisticsData(c *gin.Context) {
 		var trend MonthlyTrend
 		trend.Month = monthStr
 
-		// 该月评估数量
+		// 该月评估数量（只统计在职员工）
 		models.DB.Model(&models.KPIEvaluation{}).
-			Where("year = ? AND month = ?", date.Year(), int(date.Month())).
+			Joins("JOIN employees ON kpi_evaluations.employee_id = employees.id").
+			Where("kpi_evaluations.year = ? AND kpi_evaluations.month = ? AND employees.is_active = ?", date.Year(), int(date.Month()), true).
 			Count(&trend.Evaluations)
 
-		// 该月平均分
+		// 该月平均分（只统计在职员工）
 		var avgResult struct {
 			AvgScore float64
 		}
 		models.DB.Model(&models.KPIEvaluation{}).
-			Select("AVG(total_score) as avg_score").
-			Where("year = ? AND month = ? AND status = ?", date.Year(), int(date.Month()), "completed").
+			Select("AVG(kpi_evaluations.total_score) as avg_score").
+			Joins("JOIN employees ON kpi_evaluations.employee_id = employees.id").
+			Where("kpi_evaluations.year = ? AND kpi_evaluations.month = ? AND kpi_evaluations.status = ? AND employees.is_active = ?", date.Year(), int(date.Month()), "completed", true).
 			Scan(&avgResult)
 		trend.AvgScore = avgResult.AvgScore
 
-		// 完成率
+		// 完成率（只统计在职员工）
 		var completed int64
 		models.DB.Model(&models.KPIEvaluation{}).
-			Where("year = ? AND month = ? AND status = ?", date.Year(), int(date.Month()), "completed").
+			Joins("JOIN employees ON kpi_evaluations.employee_id = employees.id").
+			Where("kpi_evaluations.year = ? AND kpi_evaluations.month = ? AND kpi_evaluations.status = ? AND employees.is_active = ?", date.Year(), int(date.Month()), "completed", true).
 			Count(&completed)
 
 		if trend.Evaluations > 0 {
@@ -727,16 +743,17 @@ func GetStatisticsData(c *gin.Context) {
 	for _, scoreRange := range scoreRanges {
 		var count int64
 		query := models.DB.Model(&models.KPIEvaluation{}).
-			Where("status = ? AND total_score >= ? AND total_score <= ?", "completed", scoreRange.min, scoreRange.max)
+			Joins("JOIN employees ON kpi_evaluations.employee_id = employees.id").
+			Where("kpi_evaluations.status = ? AND kpi_evaluations.total_score >= ? AND kpi_evaluations.total_score <= ? AND employees.is_active = ?", "completed", scoreRange.min, scoreRange.max, true)
 
 		switch period {
 		case "monthly":
-			query = query.Where("period = ? AND year = ? AND month = ?", "monthly", year, month)
+			query = query.Where("kpi_evaluations.period = ? AND kpi_evaluations.year = ? AND kpi_evaluations.month = ?", "monthly", year, month)
 		case "quarterly":
-			query = query.Where("period = ? AND year = ? AND quarter = ?", "quarterly", year, quarter)
+			query = query.Where("kpi_evaluations.period = ? AND kpi_evaluations.year = ? AND kpi_evaluations.quarter = ?", "quarterly", year, quarter)
 		default:
 			// 兼容历史数据格式，支持 period="yearly" 和 period="年份"
-			query = query.Where("(period = ? OR period = ?) AND year = ?", "yearly", year, year)
+			query = query.Where("(kpi_evaluations.period = ? OR kpi_evaluations.period = ?) AND kpi_evaluations.year = ?", "yearly", year, year)
 		}
 
 		query.Count(&count)
@@ -761,7 +778,7 @@ func GetStatisticsData(c *gin.Context) {
 		Select("employees.id as employee_id, employees.name as employee_name, departments.name as dept_name, AVG(kpi_evaluations.total_score) as avg_score, COUNT(*) as eval_count").
 		Joins("JOIN employees ON kpi_evaluations.employee_id = employees.id").
 		Joins("JOIN departments ON employees.department_id = departments.id").
-		Where("kpi_evaluations.status = ?", "completed")
+		Where("kpi_evaluations.status = ? AND employees.is_active = ?", "completed", true)
 
 	switch period {
 	case "monthly":
@@ -787,10 +804,12 @@ func GetStatisticsData(c *gin.Context) {
 		})
 	}
 
-	// 5. 获取最近评估记录
+	// 5. 获取最近评估记录（只显示在职员工的评估）
 	var recentEvals []models.KPIEvaluation
 	models.DB.Preload("Employee.Department").Preload("Template").
-		Order("created_at DESC").
+		Joins("JOIN employees ON kpi_evaluations.employee_id = employees.id").
+		Where("employees.is_active = ?", true).
+		Order("kpi_evaluations.created_at DESC").
 		Limit(10).
 		Find(&recentEvals)
 

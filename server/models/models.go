@@ -68,18 +68,20 @@ type KPIItem struct {
 
 // KPI评估记录模型
 type KPIEvaluation struct {
-	ID           uint      `json:"id" gorm:"primaryKey"`
-	EmployeeID   uint      `json:"employee_id"`
-	TemplateID   uint      `json:"template_id"`
-	Period       string    `json:"period"` // 2024-01, 2024-Q1, 2024
-	Year         int       `json:"year"`
-	Month        *int      `json:"month,omitempty"`
-	Quarter      *int      `json:"quarter,omitempty"`
-	Status       string    `json:"status" gorm:"default:pending"` // pending, self_evaluated, manager_evaluated, pending_confirm, completed
-	TotalScore   float64   `json:"total_score"`
-	FinalComment string    `json:"final_comment"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ID              uint      `json:"id" gorm:"primaryKey"`
+	EmployeeID      uint      `json:"employee_id"`
+	TemplateID      uint      `json:"template_id"`
+	Period          string    `json:"period"` // 2024-01, 2024-Q1, 2024
+	Year            int       `json:"year"`
+	Month           *int      `json:"month,omitempty"`
+	Quarter         *int      `json:"quarter,omitempty"`
+	Status          string    `json:"status" gorm:"default:pending"` // pending, self_evaluated, manager_evaluated, pending_confirm, completed
+	TotalScore      float64   `json:"total_score"`
+	FinalComment    string    `json:"final_comment"`
+	HasObjection    bool      `json:"has_objection" gorm:"default:false"` // 是否有异议
+	ObjectionReason string    `json:"objection_reason"`                   // 异议原因（员工填写）
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 
 	// 关联关系
 	Employee Employee    `json:"employee,omitempty" gorm:"foreignKey:EmployeeID"`
@@ -165,4 +167,50 @@ type InvitedScore struct {
 	// 关联关系
 	Invitation EvaluationInvitation `json:"invitation,omitempty" gorm:"foreignKey:InvitationID"`
 	Item       KPIItem              `json:"item,omitempty" gorm:"foreignKey:ItemID"`
+}
+
+// 绩效评分规则模型
+type PerformanceRule struct {
+	ID             uint                        `json:"id" gorm:"primaryKey"`
+	NoInvitation   PerformanceRuleNoInvitation `json:"no_invitation" gorm:"embedded;embeddedPrefix:no_invitation_"`
+	WithInvitation PerformanceRuleWithInvite   `json:"with_invitation" gorm:"embedded;embeddedPrefix:with_invitation_"`
+	Enabled        bool                        `json:"enabled" gorm:"not null;default:false"`
+	CreatedAt      time.Time                   `json:"created_at"`
+	UpdatedAt      time.Time                   `json:"updated_at"`
+}
+
+// 无邀请评分规则
+type PerformanceRuleNoInvitation struct {
+	SelfWeight     float64 `json:"self_weight" gorm:"not null;default:10"`
+	SuperiorWeight float64 `json:"superior_weight" gorm:"not null;default:90"`
+}
+
+// 有邀请评分规则
+type PerformanceRuleWithInvite struct {
+	Employee PerformanceRuleEmployee `json:"employee" gorm:"embedded;embeddedPrefix:employee_"`
+}
+
+// 员工邀请评分规则
+type PerformanceRuleEmployee struct {
+	SelfWeight           float64 `json:"self_weight" gorm:"not null;default:10"`
+	InviteSuperiorWeight float64 `json:"invite_superior_weight" gorm:"not null;default:30"`
+	SuperiorWeight       float64 `json:"superior_weight" gorm:"not null;default:60"`
+}
+
+// DefaultPerformanceRule 返回默认绩效规则配置
+func DefaultPerformanceRule() PerformanceRule {
+	return PerformanceRule{
+		Enabled: false,
+		NoInvitation: PerformanceRuleNoInvitation{
+			SelfWeight:     10,
+			SuperiorWeight: 90,
+		},
+		WithInvitation: PerformanceRuleWithInvite{
+			Employee: PerformanceRuleEmployee{
+				SelfWeight:           10,
+				InviteSuperiorWeight: 30,
+				SuperiorWeight:       60,
+			},
+		},
+	}
 }

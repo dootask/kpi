@@ -73,6 +73,8 @@ export default function TestNotificationsPage() {
         status: "pending",
         total_score: 0,
         final_comment: "",
+        has_objection: false,
+        objection_reason: "",
       })
       toast.success("测试评估通知已发送")
     } catch (error) {

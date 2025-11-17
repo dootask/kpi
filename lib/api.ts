@@ -101,6 +101,8 @@ export interface KPIEvaluation {
   status: string
   total_score: number
   final_comment: string
+  has_objection: boolean
+  objection_reason: string
   created_at: string
   employee?: Employee
   template?: KPITemplate
@@ -150,6 +152,36 @@ export interface InvitedScore {
   updated_at: string
   invitation?: EvaluationInvitation
   item?: KPIItem
+}
+
+export interface PerformanceRuleNoInvitation {
+  self_weight: number
+  superior_weight: number
+}
+
+export interface PerformanceRuleEmployeeInvite {
+  self_weight: number
+  invite_superior_weight: number
+  superior_weight: number
+}
+
+export interface PerformanceRuleWithInvitation {
+  employee: PerformanceRuleEmployeeInvite
+}
+
+export interface PerformanceRule {
+  id: number
+  no_invitation: PerformanceRuleNoInvitation
+  with_invitation: PerformanceRuleWithInvitation
+  enabled: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface PerformanceRuleRequest {
+  no_invitation: PerformanceRuleNoInvitation
+  with_invitation: PerformanceRuleWithInvitation
+  enabled: boolean
 }
 
 export interface DashboardStats {
@@ -305,12 +337,18 @@ export interface PaginationParams {
   search?: string
   department_id?: string
   role?: string
+  is_active?: boolean
 }
 
 // 评估分页查询参数接口
 export interface EvaluationPaginationParams extends PaginationParams {
   status?: string
   employee_id?: string
+  period?: string
+  year?: string
+  month?: string
+  quarter?: string
+  manager_id?: string
 }
 
 // 员工API
@@ -343,6 +381,13 @@ export const itemApi = {
   delete: (id: number): Promise<void> => api.delete(`/items/${id}`),
 }
 
+// 绩效规则API
+export const performanceRuleApi = {
+  get: (): Promise<{ data: PerformanceRule }> => api.get("/performance-rules"),
+  update: (data: PerformanceRuleRequest): Promise<{ data: PerformanceRule }> =>
+    api.put("/performance-rules", data),
+}
+
 // KPI评估API
 export const evaluationApi = {
   getAll: (params?: EvaluationPaginationParams): Promise<PaginatedResponse<KPIEvaluation>> =>
@@ -358,6 +403,10 @@ export const evaluationApi = {
   getPending: (employeeId: number): Promise<{ data: KPIEvaluation[]; total: number }> =>
     api.get(`/evaluations/pending/${employeeId}`),
   getPendingCount: (): Promise<{ count: number }> => api.get("/evaluations/pending/count"),
+  submitObjection: (id: number, data: { reason: string }): Promise<{ data: KPIEvaluation }> =>
+    api.post(`/evaluations/${id}/objection`, data),
+  handleObjection: (id: number, data: { total_score: number; final_comment: string }): Promise<{ data: KPIEvaluation }> =>
+    api.put(`/evaluations/${id}/objection/handle`, data),
 }
 
 // KPI评分API

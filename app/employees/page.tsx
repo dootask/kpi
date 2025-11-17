@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useMemo } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -12,14 +12,18 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Plus, Edit, Trash2, Users, Search } from "lucide-react"
 import { employeeApi, departmentApi, type Employee, type Department, type PaginatedResponse } from "@/lib/api"
 import { useAppContext } from "@/lib/app-context"
+import { useAuth } from "@/lib/auth-context"
 import { Pagination, usePagination } from "@/components/pagination"
 import { LoadingInline } from "@/components/loading"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 
 export default function EmployeesPage() {
   const { Confirm } = useAppContext()
+  const { isHR } = useAuth()
   const [employees, setEmployees] = useState<Employee[]>([])
   const [departments, setDepartments] = useState<Department[]>([])
   const [managers, setManagers] = useState<Employee[]>([])
+  const [supervisors, setSupervisors] = useState<Employee[]>([])
   const [loading, setLoading] = useState(true)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null)
@@ -36,6 +40,7 @@ export default function EmployeesPage() {
     department_id: "",
     manager_id: "",
     role: "employee",
+    is_active: true,
   })
 
   // 获取员工列表
@@ -114,27 +119,68 @@ export default function EmployeesPage() {
     }
   }, [formData.department_id, fetchDepartmentManagers])
 
+  // 获取可为主管设置的所有上级候选
+  const fetchSupervisors = useCallback(async () => {
+    try {
+      const response = await employeeApi.getAll({
+        pageSize: 500,
+      })
+      setSupervisors(response.data || [])
+    } catch (error) {
+      console.error("获取可选上级失败:", error)
+      setSupervisors([])
+    }
+  }, [])
+
+  useEffect(() => {
+    if (formData.role === "manager" && supervisors.length === 0) {
+      fetchSupervisors()
+    }
+  }, [formData.role, supervisors.length, fetchSupervisors])
+
+  const supervisorOptions = useMemo(() => {
+    if (formData.role === "manager") {
+      return supervisors.filter(emp => (editingEmployee ? emp.id !== editingEmployee.id : true))
+    }
+    return managers
+  }, [formData.role, supervisors, managers, editingEmployee])
+
   // 创建或更新员工
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
-      const submitData = {
-        ...formData,
+      // 构建提交数据，先处理基本字段
+      const baseData = {
+        name: formData.name,
+        email: formData.email,
+        position: formData.position,
         department_id: parseInt(formData.department_id),
-        manager_id: formData.manager_id ? parseInt(formData.manager_id) : undefined,
-        is_active: true,
+        role: formData.role,
+        is_active: formData.is_active,
+      }
+      
+      // 处理 manager_id：如果为空字符串，在更新时明确设置为 null，创建时设为 undefined
+      const submitData: Omit<Employee, "id" | "created_at" | "manager_id"> & {
+        manager_id?: number | null
+      } = {
+        ...baseData,
+        manager_id: formData.manager_id
+          ? parseInt(formData.manager_id)
+          : editingEmployee
+            ? null
+            : undefined,
       }
 
       if (editingEmployee) {
-        await employeeApi.update(editingEmployee.id, submitData)
+        await employeeApi.update(editingEmployee.id, submitData as Partial<Employee>)
       } else {
-        await employeeApi.create(submitData)
+        await employeeApi.create(submitData as Omit<Employee, "id" | "created_at">)
       }
 
       fetchEmployees()
       setDialogOpen(false)
       setEditingEmployee(null)
-      setFormData({ name: "", email: "", position: "", department_id: "", manager_id: "", role: "employee" })
+      setFormData({ name: "", email: "", position: "", department_id: "", manager_id: "", role: "employee", is_active: true })
     } catch (error) {
       console.error("保存员工失败:", error)
     }
@@ -163,6 +209,7 @@ export default function EmployeesPage() {
       department_id: employee.department_id.toString(),
       manager_id: employee.manager_id?.toString() || "",
       role: employee.role,
+      is_active: employee.is_active,
     })
     setDialogOpen(true)
   }
@@ -170,8 +217,19 @@ export default function EmployeesPage() {
   // 打开新增对话框
   const handleAdd = () => {
     setEditingEmployee(null)
-    setFormData({ name: "", email: "", position: "", department_id: "", manager_id: "", role: "employee" })
+    setFormData({ name: "", email: "", position: "", department_id: "", manager_id: "", role: "employee", is_active: true })
     setDialogOpen(true)
+  }
+
+  const getRoleLabel = (role: string) => {
+    switch (role) {
+      case "hr":
+        return "HR"
+      case "manager":
+        return "主管"
+      default:
+        return "员工"
+    }
   }
 
   const getRoleBadge = (role: string) => {
@@ -253,7 +311,16 @@ export default function EmployeesPage() {
               </div>
               <div className="flex flex-col gap-2">
                 <Label htmlFor="role">角色</Label>
-                <Select value={formData.role} onValueChange={value => setFormData({ ...formData, role: value })}>
+                <Select
+                  value={formData.role}
+                  onValueChange={value =>
+                    setFormData(prev => ({
+                      ...prev,
+                      role: value,
+                      manager_id: value === "hr" ? "" : prev.manager_id,
+                    }))
+                  }
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="选择角色" />
                   </SelectTrigger>
@@ -264,29 +331,68 @@ export default function EmployeesPage() {
                   </SelectContent>
                 </Select>
               </div>
-              {formData.role === "employee" && (
+              {formData.role !== "hr" && (
                 <div className="flex flex-col gap-2">
-                  <Label htmlFor="manager">直属上级</Label>
+                  <Label htmlFor="manager">
+                    直属上级
+                    {formData.role === "manager" && "（可选，可指定任一员工或无上级）"}
+                  </Label>
                   <Select
-                    value={formData.manager_id}
-                    onValueChange={value => setFormData({ ...formData, manager_id: value })}
+                    value={formData.manager_id || "none"}
+                    onValueChange={value => setFormData({ ...formData, manager_id: value === "none" ? "" : value })}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="选择上级" />
+                      <SelectValue
+                        placeholder={
+                          formData.role === "manager" ? "选择任一员工作为上级或无上级" : "选择上级"
+                        }
+                      />
                     </SelectTrigger>
                     <SelectContent>
-                      {managers.length === 0 && (
-                        <SelectItem value="none" disabled>
-                          无上级
+                      <SelectItem value="none">
+                        无上级
+                      </SelectItem>
+                      {supervisorOptions.length === 0 && (
+                        <SelectItem value="none-disabled" disabled>
+                          {formData.role === "manager" ? "暂无可选员工" : "暂无可选上级"}
                         </SelectItem>
                       )}
-                      {managers.map(manager => (
-                        <SelectItem key={manager.id} value={manager.id.toString()}>
-                          {manager.name}
-                        </SelectItem>
-                      ))}
+                      {supervisorOptions.map(manager => {
+                        const departmentText = manager.department?.name ? `（${manager.department.name}）` : ""
+                        const roleText = ` - ${getRoleLabel(manager.role)}`
+                        return (
+                          <SelectItem key={manager.id} value={manager.id.toString()}>
+                            {manager.name}
+                            {departmentText}
+                            {roleText}
+                          </SelectItem>
+                        )
+                      })}
                     </SelectContent>
                   </Select>
+                </div>
+              )}
+              {isHR && editingEmployee && (
+                <div className="flex flex-col gap-2">
+                  <Label>状态</Label>
+                  <RadioGroup
+                    value={formData.is_active ? "true" : "false"}
+                    onValueChange={value => setFormData({ ...formData, is_active: value === "true" })}
+                    className="flex flex-row gap-4"
+                  >
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="true" id="active" />
+                      <Label htmlFor="active" className="font-normal cursor-pointer">
+                        在职
+                      </Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="false" id="inactive" />
+                      <Label htmlFor="inactive" className="font-normal cursor-pointer">
+                        离职
+                      </Label>
+                    </div>
+                  </RadioGroup>
                 </div>
               )}
               <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 sm:space-x-2 sm:gap-0">
@@ -344,7 +450,7 @@ export default function EmployeesPage() {
                   <TableHead>部门</TableHead>
                   <TableHead>直属上级</TableHead>
                   <TableHead>角色</TableHead>
-                  {/* <TableHead>状态</TableHead> */}
+                  <TableHead>状态</TableHead>
                   <TableHead className="text-right">操作</TableHead>
                 </TableRow>
               </TableHeader>
@@ -357,11 +463,11 @@ export default function EmployeesPage() {
                     <TableCell>{employee.department?.name}</TableCell>
                     <TableCell>{employee.manager?.name || "-"}</TableCell>
                     <TableCell>{getRoleBadge(employee.role)}</TableCell>
-                    {/* <TableCell>
+                    <TableCell>
                       <Badge variant={employee.is_active ? "default" : "secondary"}>
-                        {employee.is_active ? "活跃" : "停用"}
+                        {employee.is_active ? "在职" : "离职"}
                       </Badge>
-                    </TableCell> */}
+                    </TableCell>
                     <TableCell className="text-right space-x-2">
                       <Button variant="outline" size="sm" onClick={() => handleEdit(employee)}>
                         <Edit className="w-4 h-4" />

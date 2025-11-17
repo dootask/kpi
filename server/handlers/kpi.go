@@ -1,14 +1,18 @@
 package handlers
 
 import (
+	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"dootask-kpi-server/models"
 	"dootask-kpi-server/utils"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 // KPI项目管理
@@ -157,6 +161,11 @@ func GetEvaluations(c *gin.Context) {
 	status := c.Query("status")
 	employeeID := c.Query("employee_id")
 	departmentID := c.Query("department_id")
+	managerID := c.Query("manager_id")
+	period := c.Query("period")
+	year := c.Query("year")
+	month := c.Query("month")
+	quarter := c.Query("quarter")
 
 	// 验证分页参数
 	if page < 1 {
@@ -179,6 +188,21 @@ func GetEvaluations(c *gin.Context) {
 	if departmentID != "" {
 		query = query.Where("employee_id IN (SELECT id FROM employees WHERE department_id = ?)", departmentID)
 	}
+	if managerID != "" {
+		query = query.Where("employee_id IN (SELECT id FROM employees WHERE manager_id = ?)", managerID)
+	}
+	if period != "" {
+		query = query.Where("period = ?", period)
+	}
+	if year != "" {
+		query = query.Where("year = ?", year)
+	}
+	if month != "" {
+		query = query.Where("month = ?", month)
+	}
+	if quarter != "" {
+		query = query.Where("quarter = ?", quarter)
+	}
 
 	// 获取总数
 	var total int64
@@ -191,6 +215,21 @@ func GetEvaluations(c *gin.Context) {
 	}
 	if departmentID != "" {
 		countQuery = countQuery.Where("employee_id IN (SELECT id FROM employees WHERE department_id = ?)", departmentID)
+	}
+	if managerID != "" {
+		countQuery = countQuery.Where("employee_id IN (SELECT id FROM employees WHERE manager_id = ?)", managerID)
+	}
+	if period != "" {
+		countQuery = countQuery.Where("period = ?", period)
+	}
+	if year != "" {
+		countQuery = countQuery.Where("year = ?", year)
+	}
+	if month != "" {
+		countQuery = countQuery.Where("month = ?", month)
+	}
+	if quarter != "" {
+		countQuery = countQuery.Where("quarter = ?", quarter)
 	}
 	if err := countQuery.Count(&total).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -384,11 +423,26 @@ func UpdateEvaluation(c *gin.Context) {
 		return
 	}
 
+	// 当流程进入等待HR审核阶段时，根据配置自动计算HR评分
+	if updateData.Status == "manager_evaluated" {
+		// 检查绩效规则是否启用
+		var rule models.PerformanceRule
+		if err := models.DB.First(&rule).Error; err == nil && rule.Enabled {
+			// 如果规则已启用，自动计算HR评分
+			if err := applyPerformanceRuleForEvaluation(evaluation.ID); err == nil {
+				// 如果绩效规则应用成功，自动将状态推进到pending_confirm
+				models.DB.Model(&evaluation).Update("status", "pending_confirm")
+				updateData.Status = "pending_confirm"
+			}
+		}
+		// 如果规则未启用或应用失败，保持manager_evaluated状态，等待HR手动审核
+	}
+
 	// 如果状态变为completed，自动计算最终得分
 	if updateData.Status == "completed" {
 		var scores []models.KPIScore
 		if err := models.DB.Where("evaluation_id = ?", evaluation.ID).Find(&scores).Error; err == nil {
-			total := 0.0
+			// 更新各项目的final_score
 			for _, s := range scores {
 				var final float64
 				if s.HRScore != nil {
@@ -399,9 +453,33 @@ func UpdateEvaluation(c *gin.Context) {
 					final = *s.SelfScore
 				}
 				models.DB.Model(&s).Update("final_score", final)
-				total += final
 			}
-			models.DB.Model(&evaluation).Update("total_score", total)
+
+			// 如果前端发送了total_score（说明可能已经过异议处理调整），使用前端发送的值
+			// 否则，如果存在异议处理（有final_comment），保持现有的total_score
+			// 否则，重新计算total_score
+			if updateData.TotalScore > 0 {
+				// 使用前端发送的total_score（已通过异议处理调整）
+				models.DB.Model(&evaluation).Update("total_score", updateData.TotalScore)
+			} else if evaluation.FinalComment != "" {
+				// 存在异议处理，保持现有的total_score
+				// 不更新total_score
+			} else {
+				// 没有异议处理，正常计算最终得分
+				total := 0.0
+				for _, s := range scores {
+					var final float64
+					if s.HRScore != nil {
+						final = *s.HRScore
+					} else if s.ManagerScore != nil {
+						final = *s.ManagerScore
+					} else if s.SelfScore != nil {
+						final = *s.SelfScore
+					}
+					total += final
+				}
+				models.DB.Model(&evaluation).Update("total_score", total)
+			}
 		}
 	}
 
@@ -819,4 +897,381 @@ func UpdateFinalScore(c *gin.Context) {
 		"message": "最终得分更新成功",
 		"data":    score,
 	})
+}
+
+// 员工提交异议
+func SubmitObjection(c *gin.Context) {
+	id := c.Param("id")
+	evaluationId, err := strconv.ParseUint(id, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "无效的评估ID",
+		})
+		return
+	}
+
+	var evaluation models.KPIEvaluation
+	result := models.DB.Preload("Employee").Preload("Employee.Manager").First(&evaluation, evaluationId)
+	if result.Error != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "评估不存在",
+		})
+		return
+	}
+
+	// 检查权限：只有被考核员工本人可以提交异议
+	userID := c.GetUint("user_id")
+	if evaluation.EmployeeID != userID {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error": "无权操作此评估",
+		})
+		return
+	}
+
+	// 检查状态：只有在待确认状态才能提交异议
+	if evaluation.Status != "pending_confirm" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "只有在待确认状态才能提交异议",
+		})
+		return
+	}
+
+	// 检查是否已有异议（包括已处理的情况）
+	if evaluation.HasObjection || evaluation.ObjectionReason != "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "已提交过异议，不可重复提交",
+		})
+		return
+	}
+
+	var objectionData struct {
+		Reason string `json:"reason" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&objectionData); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "请求参数错误",
+			"message": err.Error(),
+		})
+		return
+	}
+
+	// 更新评估，添加异议
+	result = models.DB.Model(&evaluation).Updates(map[string]interface{}{
+		"has_objection":    true,
+		"objection_reason": objectionData.Reason,
+	})
+
+	if result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "提交异议失败",
+			"message": result.Error.Error(),
+		})
+		return
+	}
+
+	// 重新加载评估数据
+	models.DB.Preload("Employee").Preload("Employee.Manager").Preload("Template").First(&evaluation, evaluationId)
+
+	// 发送通知给上级和HR
+	notificationService := GetNotificationService()
+
+	// 通知上级（如果有）
+	if evaluation.Employee.Manager != nil {
+		notificationService.SendNotification(evaluation.Employee.Manager.ID, EventObjectionSubmitted, &evaluation)
+	}
+
+	// 通知所有HR
+	hrUserIDs := notificationService.GetAllHRUsers()
+	for _, hrID := range hrUserIDs {
+		notificationService.SendNotification(hrID, EventObjectionSubmitted, &evaluation)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "异议提交成功",
+		"data":    evaluation,
+	})
+}
+
+// HR处理异议
+func HandleObjection(c *gin.Context) {
+	id := c.Param("id")
+	evaluationId, err := strconv.ParseUint(id, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "无效的评估ID",
+		})
+		return
+	}
+
+	var evaluation models.KPIEvaluation
+	result := models.DB.Preload("Employee").First(&evaluation, evaluationId)
+	if result.Error != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "评估不存在",
+		})
+		return
+	}
+
+	// 检查是否有异议
+	if !evaluation.HasObjection {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "该评估没有异议需要处理",
+		})
+		return
+	}
+
+	var handleData struct {
+		TotalScore   float64 `json:"total_score" binding:"required"`
+		FinalComment string  `json:"final_comment" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&handleData); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "请求参数错误",
+			"message": err.Error(),
+		})
+		return
+	}
+
+	// 更新评估：处理异议，清除异议状态，更新最终得分和处理原因
+	result = models.DB.Model(&evaluation).Updates(map[string]interface{}{
+		"has_objection": false,
+		"total_score":   handleData.TotalScore,
+		"final_comment": handleData.FinalComment,
+	})
+
+	if result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "处理异议失败",
+			"message": result.Error.Error(),
+		})
+		return
+	}
+
+	// 重新加载评估数据
+	models.DB.Preload("Employee").Preload("Template").First(&evaluation, evaluationId)
+
+	// 发送通知给员工
+	GetNotificationService().SendNotification(evaluation.EmployeeID, EventObjectionHandled, &evaluation)
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "异议处理成功",
+		"data":    evaluation,
+	})
+}
+
+const (
+	performanceScenarioNoInvitation       = "no_invitation"
+	performanceScenarioEmployeeInvitation = "employee_invitation"
+
+	autoHRScoreComment = "系统根据绩效规则自动计算"
+)
+
+type invitationAggregate struct {
+	Average float64
+	Count   int
+}
+
+type scoreComponent struct {
+	weight  float64
+	value   float64
+	present bool
+}
+
+// applyPerformanceRuleForEvaluation 根据启用的绩效规则自动计算HR评分和总分
+func applyPerformanceRuleForEvaluation(evaluationID uint) error {
+	var rule models.PerformanceRule
+	if err := models.DB.First(&rule).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		return err
+	}
+
+	if !rule.Enabled {
+		return nil
+	}
+
+	var evaluation models.KPIEvaluation
+	if err := models.DB.Preload("Employee").First(&evaluation, evaluationID).Error; err != nil {
+		return err
+	}
+
+	var scores []models.KPIScore
+	if err := models.DB.Where("evaluation_id = ?", evaluationID).Find(&scores).Error; err != nil {
+		return err
+	}
+	if len(scores) == 0 {
+		return nil
+	}
+
+	var invitations []models.EvaluationInvitation
+	if err := models.DB.
+		Preload("Invitee").
+		Preload("Scores").
+		Where("evaluation_id = ? AND status = ?", evaluationID, "completed").
+		Find(&invitations).Error; err != nil {
+		return err
+	}
+
+	scenario, relevantInvitations := determinePerformanceRuleScenario(invitations)
+	invitationAverages := buildInvitationAverages(relevantInvitations)
+
+	tx := models.DB.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
+	totalScore := 0.0
+	updatedCount := 0
+
+	for _, score := range scores {
+		aggregate := invitationAverages[score.ItemID]
+		hrScore, ok := calculateHRScoreByScenario(score, aggregate, scenario, rule)
+		if !ok {
+			continue
+		}
+
+		comment := score.HRComment
+		if strings.TrimSpace(comment) == "" {
+			comment = autoHRScoreComment
+		}
+
+		if err := tx.Model(&models.KPIScore{}).Where("id = ?", score.ID).Updates(map[string]interface{}{
+			"hr_score":   hrScore,
+			"hr_comment": comment,
+		}).Error; err != nil {
+			tx.Rollback()
+			return err
+		}
+
+		totalScore += hrScore
+		updatedCount++
+	}
+
+	if updatedCount > 0 {
+		totalScore = math.Round(totalScore*100) / 100
+		if err := tx.Model(&models.KPIEvaluation{}).Where("id = ?", evaluationID).Update("total_score", totalScore).Error; err != nil {
+			tx.Rollback()
+			return err
+		}
+	}
+
+	return tx.Commit().Error
+}
+
+// determinePerformanceRuleScenario 根据邀请情况确定使用的绩效规则场景
+func determinePerformanceRuleScenario(invitations []models.EvaluationInvitation) (string, []models.EvaluationInvitation) {
+	validInvitations := make([]models.EvaluationInvitation, 0, len(invitations))
+	for _, invitation := range invitations {
+		if invitationHasCompletedScore(invitation) {
+			validInvitations = append(validInvitations, invitation)
+		}
+	}
+
+	if len(validInvitations) == 0 {
+		return performanceScenarioNoInvitation, nil
+	}
+
+	return performanceScenarioEmployeeInvitation, validInvitations
+}
+
+func invitationHasCompletedScore(invitation models.EvaluationInvitation) bool {
+	for _, score := range invitation.Scores {
+		if score.Score != nil {
+			return true
+		}
+	}
+	return false
+}
+
+func buildInvitationAverages(invitations []models.EvaluationInvitation) map[uint]invitationAggregate {
+	aggregates := make(map[uint]invitationAggregate)
+
+	for _, invitation := range invitations {
+		for _, score := range invitation.Scores {
+			if score.Score == nil {
+				continue
+			}
+
+			aggregate := aggregates[score.ItemID]
+			aggregate.Average += *score.Score
+			aggregate.Count++
+			aggregates[score.ItemID] = aggregate
+		}
+	}
+
+	for itemID, aggregate := range aggregates {
+		if aggregate.Count > 0 {
+			aggregate.Average = aggregate.Average / float64(aggregate.Count)
+			aggregates[itemID] = aggregate
+		} else {
+			delete(aggregates, itemID)
+		}
+	}
+
+	return aggregates
+}
+
+func calculateHRScoreByScenario(score models.KPIScore, aggregate invitationAggregate, scenario string, rule models.PerformanceRule) (float64, bool) {
+	selfValue, hasSelf := valueFromPointer(score.SelfScore)
+	managerValue, hasManager := valueFromPointer(score.ManagerScore)
+	inviteValue := aggregate.Average
+	hasInvite := aggregate.Count > 0
+
+	var components []scoreComponent
+
+	switch scenario {
+	case performanceScenarioEmployeeInvitation:
+		components = []scoreComponent{
+			{weight: rule.WithInvitation.Employee.SelfWeight, value: selfValue, present: hasSelf},
+			{weight: rule.WithInvitation.Employee.InviteSuperiorWeight, value: inviteValue, present: hasInvite},
+			{weight: rule.WithInvitation.Employee.SuperiorWeight, value: managerValue, present: hasManager},
+		}
+	default:
+		components = []scoreComponent{
+			{weight: rule.NoInvitation.SelfWeight, value: selfValue, present: hasSelf},
+			{weight: rule.NoInvitation.SuperiorWeight, value: managerValue, present: hasManager},
+		}
+	}
+
+	result, ok := weightedAverage(components)
+	if !ok {
+		return 0, false
+	}
+
+	result = math.Round(result*100) / 100
+	return result, true
+}
+
+func valueFromPointer(val *float64) (float64, bool) {
+	if val == nil {
+		return 0, false
+	}
+	return *val, true
+}
+
+func weightedAverage(components []scoreComponent) (float64, bool) {
+	totalWeight := 0.0
+	for _, component := range components {
+		if component.present && component.weight > 0 {
+			totalWeight += component.weight
+		}
+	}
+
+	if totalWeight == 0 {
+		return 0, false
+	}
+
+	totalValue := 0.0
+	for _, component := range components {
+		if component.present && component.weight > 0 {
+			totalValue += (component.weight / totalWeight) * component.value
+		}
+	}
+
+	return totalValue, true
 }

@@ -26,8 +26,8 @@ func GetDepartments(c *gin.Context) {
 		pageSize = 10
 	}
 
-	// 构建查询
-	query := models.DB.Preload("Employees")
+	// 构建查询，只预加载在职员工
+	query := models.DB.Preload("Employees", "is_active = ?", true)
 
 	// 添加搜索条件
 	if search != "" {
@@ -117,7 +117,7 @@ func GetDepartment(c *gin.Context) {
 	}
 
 	var department models.Department
-	result := models.DB.Preload("Employees").First(&department, departmentId)
+	result := models.DB.Preload("Employees", "is_active = ?", true).First(&department, departmentId)
 	if result.Error != nil {
 		c.JSON(http.StatusNotFound, gin.H{
 			"error": "部门不存在",
@@ -185,12 +185,12 @@ func DeleteDepartment(c *gin.Context) {
 		return
 	}
 
-	// 检查是否有员工在该部门
+	// 检查是否有在职员工在该部门
 	var employeeCount int64
-	models.DB.Model(&models.Employee{}).Where("department_id = ?", departmentId).Count(&employeeCount)
+	models.DB.Model(&models.Employee{}).Where("department_id = ? AND is_active = ?", departmentId, true).Count(&employeeCount)
 	if employeeCount > 0 {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "该部门下还有员工，无法删除",
+			"error": "该部门下还有在职员工，无法删除",
 		})
 		return
 	}

@@ -19,6 +19,7 @@ func GetEmployees(c *gin.Context) {
 	search := c.Query("search")
 	departmentID := c.Query("department_id")
 	role := c.Query("role")
+	isActiveStr := c.Query("is_active")
 
 	// 验证分页参数
 	if page < 1 {
@@ -52,6 +53,12 @@ func GetEmployees(c *gin.Context) {
 		}
 	}
 
+	// 添加状态筛选（is_active）
+	if isActiveStr != "" {
+		isActive := isActiveStr == "true"
+		query = query.Where("is_active = ?", isActive)
+	}
+
 	// 获取总数
 	var total int64
 	countQuery := models.DB.Model(&models.Employee{})
@@ -69,6 +76,10 @@ func GetEmployees(c *gin.Context) {
 		} else {
 			countQuery = countQuery.Where("role = ?", role)
 		}
+	}
+	if isActiveStr != "" {
+		isActive := isActiveStr == "true"
+		countQuery = countQuery.Where("is_active = ?", isActive)
 	}
 
 	if err := countQuery.Count(&total).Error; err != nil {
@@ -188,7 +199,18 @@ func UpdateEmployee(c *gin.Context) {
 		return
 	}
 
-	result = models.DB.Model(&employee).Updates(updateData)
+	// 使用 map 来确保 nil 值能够被正确更新
+	updateMap := map[string]interface{}{
+		"name":         updateData.Name,
+		"email":        updateData.Email,
+		"position":     updateData.Position,
+		"department_id": updateData.DepartmentID,
+		"manager_id":   updateData.ManagerID, // 支持 nil 值以清空直属上级
+		"role":         updateData.Role,
+		"is_active":    updateData.IsActive,
+	}
+
+	result = models.DB.Model(&employee).Updates(updateMap)
 	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":   "更新员工失败",
