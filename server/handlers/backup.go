@@ -306,6 +306,7 @@ func generateSQLBackup(w io.Writer) error {
 		"evaluation_invitations",
 		"invited_scores",
 		"system_settings",
+		"performance_rules",
 	}
 
 	// 写入备份头部信息

@@ -8,13 +8,11 @@ import { Badge } from "@/components/ui/badge"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog"
 import { Download, RotateCcw, Trash2, Database, HardDrive } from "lucide-react"
 import { toast } from "sonner"
-import { useAppContext } from "@/lib/app-context"
 import { LoadingInline } from "@/components/loading"
 import { backupApi, type BackupHistory } from "@/lib/api"
 import { downloadUrl } from "@dootask/tools"
 
 export default function BackupPage() {
-  const { Confirm } = useAppContext()
   const [backups, setBackups] = useState<BackupHistory[]>([])
   const [loading, setLoading] = useState(true)
   const [backupLoading, setBackupLoading] = useState(false)
@@ -66,13 +64,6 @@ export default function BackupPage() {
 
   // 恢复备份
   const restoreBackup = async (fileName: string) => {
-    const confirmed = await Confirm(
-      '确认恢复数据库',
-      `确定要从备份文件 "${fileName}" 恢复数据库吗？此操作将覆盖当前所有数据，且不可撤销。`
-    )
-
-    if (!confirmed) return
-
     try {
       const result = await backupApi.restore(fileName)
       toast.success(result.message || '数据库恢复成功')
@@ -89,13 +80,6 @@ export default function BackupPage() {
 
   // 删除备份
   const deleteBackup = async (fileName: string) => {
-    const confirmed = await Confirm(
-      '确认删除备份',
-      `确定要删除备份文件 "${fileName}" 吗？此操作不可撤销。`
-    )
-
-    if (!confirmed) return
-
     try {
       const result = await backupApi.delete(fileName)
       toast.success(result.message || '备份删除成功')
@@ -134,13 +118,11 @@ export default function BackupPage() {
 
   return (
     <div className="space-y-6">
-      {/* 页面标题 */}
-      <div className="flex items-center justify-between">
+      {/* 响应式头部 */}
+      <div className="flex justify-between items-center flex-wrap gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">备份还原</h1>
-          <p className="text-muted-foreground">
-            管理和维护系统数据库备份
-          </p>
+          <h1 className="text-2xl sm:text-3xl font-bold text-foreground">备份还原</h1>
+          <p className="text-muted-foreground mt-1 sm:mt-2">管理和维护系统数据库备份</p>
         </div>
       </div>
 
@@ -225,10 +207,8 @@ export default function BackupPage() {
                           variant="outline"
                           size="sm"
                           onClick={() => downloadBackup(backup.download_url)}
-                          className="flex items-center gap-1"
                         >
-                          <Download className="h-3 w-3" />
-                          下载
+                          <Download className="w-4 h-4" />
                         </Button>
 
                         <AlertDialog>
@@ -236,10 +216,8 @@ export default function BackupPage() {
                             <Button
                               variant="outline"
                               size="sm"
-                              className="flex items-center gap-1 text-orange-600 hover:text-orange-700"
                             >
-                              <RotateCcw className="h-3 w-3" />
-                              恢复
+                              <RotateCcw className="w-4 h-4" />
                             </Button>
                           </AlertDialogTrigger>
                           <AlertDialogContent>
@@ -258,9 +236,8 @@ export default function BackupPage() {
                               <AlertDialogCancel>取消</AlertDialogCancel>
                               <AlertDialogAction
                                 onClick={() => restoreBackup(backup.file_name)}
-                                className="bg-red-600 hover:bg-red-700"
                               >
-                                确认恢复
+                                确认
                               </AlertDialogAction>
                             </AlertDialogFooter>
                           </AlertDialogContent>
@@ -270,10 +247,8 @@ export default function BackupPage() {
                             <Button
                               variant="outline"
                               size="sm"
-                              className="flex items-center gap-1 text-red-600 hover:text-red-700"
                             >
-                              <Trash2 className="h-3 w-3" />
-                              删除
+                              <Trash2 className="w-4 h-4" />
                             </Button>
                           </AlertDialogTrigger>
                           <AlertDialogContent>
@@ -288,9 +263,8 @@ export default function BackupPage() {
                               <AlertDialogCancel>取消</AlertDialogCancel>
                               <AlertDialogAction
                                 onClick={() => deleteBackup(backup.file_name)}
-                                className="bg-red-600 hover:bg-red-700"
                               >
-                                确认删除
+                                确认
                               </AlertDialogAction>
                             </AlertDialogFooter>
                           </AlertDialogContent>

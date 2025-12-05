@@ -268,15 +268,16 @@ export default function PerformanceRulesPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
+      {/* 响应式头部 */}
+      <div className="flex justify-between items-center flex-wrap gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-foreground">绩效规则配置</h1>
           <p className="text-muted-foreground mt-1 sm:mt-2">
             设置不同场景下自评、上级及邀请评分的权重比例
           </p>
         </div>
-        <Button type="button" variant="outline" className="flex items-center gap-2" onClick={fetchRule} disabled={isBusy}>
-          <RefreshCw className="h-4 w-4" />
+        <Button type="button" className="w-full sm:w-auto lg:mt-8" onClick={fetchRule} disabled={isBusy}>
+          <RefreshCw className="w-4 h-4 mr-2" />
           重新加载
         </Button>
       </div>
