@@ -10,7 +10,7 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@dootask/tools": "^1.2.1",
+    "@dootask/tools": "^1.2.5",
     "@hookform/resolvers": "^5.1.1",
     "@radix-ui/react-alert-dialog": "^1.1.14",
     "@radix-ui/react-checkbox": "^1.3.2",
