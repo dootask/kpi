@@ -18,7 +18,7 @@ import { LoadingInline } from "@/components/loading"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 
 export default function EmployeesPage() {
-  const { Confirm } = useAppContext()
+  const { Alert, Confirm } = useAppContext()
   const { isHR } = useAuth()
   const [employees, setEmployees] = useState<Employee[]>([])
   const [departments, setDepartments] = useState<Department[]>([])
@@ -145,10 +145,22 @@ export default function EmployeesPage() {
     return managers
   }, [formData.role, supervisors, managers, editingEmployee])
 
+  const managerSelectValue = useMemo(() => {
+    if (formData.role === "manager") {
+      return formData.manager_id || "none"
+    }
+    return formData.manager_id
+  }, [formData.manager_id, formData.role])
+
   // 创建或更新员工
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
+      if (formData.role === "employee" && !formData.manager_id) {
+        await Alert("验证失败", "普通员工必须选择直属上级，请先选择上级后再提交。")
+        return
+      }
+
       // 构建提交数据，先处理基本字段
       const baseData = {
         name: formData.name,
@@ -336,23 +348,29 @@ export default function EmployeesPage() {
                   <div className="flex flex-col gap-2">
                     <Label htmlFor="manager">
                       直属上级
-                      {formData.role === "manager" && "（可选，可指定任一员工或无上级）"}
+                      {formData.role === "manager"
+                        ? "（可选，可指定任一员工或无上级）"
+                        : "（普通员工必选）"}
                     </Label>
                     <Select
-                      value={formData.manager_id || "none"}
+                      value={managerSelectValue}
                       onValueChange={value => setFormData({ ...formData, manager_id: value === "none" ? "" : value })}
                     >
                       <SelectTrigger>
                         <SelectValue
                           placeholder={
-                            formData.role === "manager" ? "选择任一员工作为上级或无上级" : "选择上级"
+                            formData.role === "manager"
+                              ? "选择任一员工作为上级或无上级"
+                              : "选择直属上级（必选）"
                           }
                         />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="none">
-                          无上级
-                        </SelectItem>
+                        {formData.role === "manager" && (
+                          <SelectItem value="none">
+                            无上级
+                          </SelectItem>
+                        )}
                         {supervisorOptions.length === 0 && (
                           <SelectItem value="none-disabled" disabled>
                             {formData.role === "manager" ? "暂无可选员工" : "暂无可选上级"}

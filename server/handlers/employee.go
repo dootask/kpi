@@ -127,6 +127,16 @@ func CreateEmployee(c *gin.Context) {
 		return
 	}
 
+	if employee.Role == "" {
+		employee.Role = "employee"
+	}
+	if employee.Role == "employee" && (employee.ManagerID == nil || *employee.ManagerID == 0) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "普通员工必须选择直属上级",
+		})
+		return
+	}
+
 	result := models.DB.Create(&employee)
 	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -199,15 +209,40 @@ func UpdateEmployee(c *gin.Context) {
 		return
 	}
 
+	targetRole := updateData.Role
+	if targetRole == "" {
+		targetRole = employee.Role
+	}
+	targetManagerID := updateData.ManagerID
+	if targetRole == "employee" && targetManagerID == nil {
+		targetManagerID = employee.ManagerID
+	}
+
+	if targetRole == "employee" && (targetManagerID == nil || *targetManagerID == 0) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "普通员工必须选择直属上级",
+		})
+		return
+	}
+
+	roleValue := updateData.Role
+	if roleValue == "" {
+		roleValue = employee.Role
+	}
+	managerValue := updateData.ManagerID
+	if updateData.Role == "" && updateData.ManagerID == nil {
+		managerValue = employee.ManagerID
+	}
+
 	// 使用 map 来确保 nil 值能够被正确更新
 	updateMap := map[string]interface{}{
-		"name":         updateData.Name,
-		"email":        updateData.Email,
-		"position":     updateData.Position,
+		"name":          updateData.Name,
+		"email":         updateData.Email,
+		"position":      updateData.Position,
 		"department_id": updateData.DepartmentID,
-		"manager_id":   updateData.ManagerID, // 支持 nil 值以清空直属上级
-		"role":         updateData.Role,
-		"is_active":    updateData.IsActive,
+		"manager_id":    managerValue, // 支持 nil 值以清空直属上级
+		"role":          roleValue,
+		"is_active":     updateData.IsActive,
 	}
 
 	result = models.DB.Model(&employee).Updates(updateMap)
