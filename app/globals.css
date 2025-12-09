@@ -83,6 +83,10 @@
   --chart-3: oklch(0.769 0.188 70.08);    /* 浅绿 */
   --chart-4: oklch(0.627 0.265 303.9);    /* 粉紫 */
   --chart-5: oklch(0.645 0.246 16.439);   /* 珊瑚红 */
+
+  /* Safe area insets for devices with notches or rounded corners */
+  --safe-area-top: 0px;
+  --safe-area-bottom: 0px;
 }
 
 .dark {

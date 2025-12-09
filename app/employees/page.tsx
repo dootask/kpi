@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -262,153 +262,155 @@ export default function EmployeesPage() {
             <DialogHeader>
               <DialogTitle>{editingEmployee ? "编辑员工" : "添加员工"}</DialogTitle>
             </DialogHeader>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="name">姓名</Label>
-                <Input
-                  id="name"
-                  value={formData.name}
-                  onChange={e => setFormData({ ...formData, name: e.target.value })}
-                  required
-                />
-              </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="email">邮箱</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  value={formData.email}
-                  onChange={e => setFormData({ ...formData, email: e.target.value })}
-                  required
-                />
-              </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="position">职位</Label>
-                <Input
-                  id="position"
-                  value={formData.position}
-                  onChange={e => setFormData({ ...formData, position: e.target.value })}
-                  required
-                />
-              </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="department">部门</Label>
-                <Select
-                  value={formData.department_id}
-                  onValueChange={value => setFormData({ ...formData, department_id: value, manager_id: "" })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="选择部门" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {departments.map(dept => (
-                      <SelectItem key={dept.id} value={dept.id.toString()}>
-                        {dept.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="role">角色</Label>
-                <Select
-                  value={formData.role}
-                  onValueChange={value =>
-                    setFormData(prev => ({
-                      ...prev,
-                      role: value,
-                      manager_id: value === "hr" ? "" : prev.manager_id,
-                    }))
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="选择角色" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="employee">员工</SelectItem>
-                    <SelectItem value="manager">主管</SelectItem>
-                    <SelectItem value="hr">HR</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              {formData.role !== "hr" && (
+            <DialogBody>
+              <form id="employee-form" onSubmit={handleSubmit} className="space-y-4">
                 <div className="flex flex-col gap-2">
-                  <Label htmlFor="manager">
-                    直属上级
-                    {formData.role === "manager" && "（可选，可指定任一员工或无上级）"}
-                  </Label>
+                  <Label htmlFor="name">姓名</Label>
+                  <Input
+                    id="name"
+                    value={formData.name}
+                    onChange={e => setFormData({ ...formData, name: e.target.value })}
+                    required
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="email">邮箱</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    value={formData.email}
+                    onChange={e => setFormData({ ...formData, email: e.target.value })}
+                    required
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="position">职位</Label>
+                  <Input
+                    id="position"
+                    value={formData.position}
+                    onChange={e => setFormData({ ...formData, position: e.target.value })}
+                    required
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="department">部门</Label>
                   <Select
-                    value={formData.manager_id || "none"}
-                    onValueChange={value => setFormData({ ...formData, manager_id: value === "none" ? "" : value })}
+                    value={formData.department_id}
+                    onValueChange={value => setFormData({ ...formData, department_id: value, manager_id: "" })}
                   >
                     <SelectTrigger>
-                      <SelectValue
-                        placeholder={
-                          formData.role === "manager" ? "选择任一员工作为上级或无上级" : "选择上级"
-                        }
-                      />
+                      <SelectValue placeholder="选择部门" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="none">
-                        无上级
-                      </SelectItem>
-                      {supervisorOptions.length === 0 && (
-                        <SelectItem value="none-disabled" disabled>
-                          {formData.role === "manager" ? "暂无可选员工" : "暂无可选上级"}
+                      {departments.map(dept => (
+                        <SelectItem key={dept.id} value={dept.id.toString()}>
+                          {dept.name}
                         </SelectItem>
-                      )}
-                      {supervisorOptions.map(manager => {
-                        const departmentText = manager.department?.name ? `（${manager.department.name}）` : ""
-                        const roleText = ` - ${getRoleLabel(manager.role)}`
-                        return (
-                          <SelectItem key={manager.id} value={manager.id.toString()}>
-                            {manager.name}
-                            {departmentText}
-                            {roleText}
-                          </SelectItem>
-                        )
-                      })}
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
-              )}
-              {isHR && editingEmployee && (
                 <div className="flex flex-col gap-2">
-                  <Label>状态</Label>
-                  <RadioGroup
-                    value={formData.is_active ? "true" : "false"}
-                    onValueChange={value => setFormData({ ...formData, is_active: value === "true" })}
-                    className="flex flex-row gap-4"
+                  <Label htmlFor="role">角色</Label>
+                  <Select
+                    value={formData.role}
+                    onValueChange={value =>
+                      setFormData(prev => ({
+                        ...prev,
+                        role: value,
+                        manager_id: value === "hr" ? "" : prev.manager_id,
+                      }))
+                    }
                   >
-                    <div className="flex items-center space-x-2">
-                      <RadioGroupItem value="true" id="active" />
-                      <Label htmlFor="active" className="font-normal cursor-pointer">
-                        在职
-                      </Label>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <RadioGroupItem value="false" id="inactive" />
-                      <Label htmlFor="inactive" className="font-normal cursor-pointer">
-                        离职
-                      </Label>
-                    </div>
-                  </RadioGroup>
+                    <SelectTrigger>
+                      <SelectValue placeholder="选择角色" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="employee">员工</SelectItem>
+                      <SelectItem value="manager">主管</SelectItem>
+                      <SelectItem value="hr">HR</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
-              )}
-              <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 sm:space-x-2 sm:gap-0">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setDialogOpen(false)}
-                  className="w-full sm:w-auto"
-                >
-                  取消
-                </Button>
-                <Button type="submit" className="w-full sm:w-auto">
-                  {editingEmployee ? "更新" : "创建"}
-                </Button>
-              </div>
-            </form>
+                {formData.role !== "hr" && (
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="manager">
+                      直属上级
+                      {formData.role === "manager" && "（可选，可指定任一员工或无上级）"}
+                    </Label>
+                    <Select
+                      value={formData.manager_id || "none"}
+                      onValueChange={value => setFormData({ ...formData, manager_id: value === "none" ? "" : value })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue
+                          placeholder={
+                            formData.role === "manager" ? "选择任一员工作为上级或无上级" : "选择上级"
+                          }
+                        />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">
+                          无上级
+                        </SelectItem>
+                        {supervisorOptions.length === 0 && (
+                          <SelectItem value="none-disabled" disabled>
+                            {formData.role === "manager" ? "暂无可选员工" : "暂无可选上级"}
+                          </SelectItem>
+                        )}
+                        {supervisorOptions.map(manager => {
+                          const departmentText = manager.department?.name ? `（${manager.department.name}）` : ""
+                          const roleText = ` - ${getRoleLabel(manager.role)}`
+                          return (
+                            <SelectItem key={manager.id} value={manager.id.toString()}>
+                              {manager.name}
+                              {departmentText}
+                              {roleText}
+                            </SelectItem>
+                          )
+                        })}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+                {isHR && editingEmployee && (
+                  <div className="flex flex-col gap-2">
+                    <Label>状态</Label>
+                    <RadioGroup
+                      value={formData.is_active ? "true" : "false"}
+                      onValueChange={value => setFormData({ ...formData, is_active: value === "true" })}
+                      className="flex flex-row gap-4"
+                    >
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="true" id="active" />
+                        <Label htmlFor="active" className="font-normal cursor-pointer">
+                          在职
+                        </Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="false" id="inactive" />
+                        <Label htmlFor="inactive" className="font-normal cursor-pointer">
+                          离职
+                        </Label>
+                      </div>
+                    </RadioGroup>
+                  </div>
+                )}
+              </form>
+            </DialogBody>
+            <DialogFooter className="flex-col-reverse sm:flex-row sm:justify-end gap-2 sm:space-x-2 sm:gap-0">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setDialogOpen(false)}
+                className="w-full sm:w-auto"
+              >
+                取消
+              </Button>
+              <Button type="submit" form="employee-form" className="w-full sm:w-auto">
+                {editingEmployee ? "更新" : "创建"}
+              </Button>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>

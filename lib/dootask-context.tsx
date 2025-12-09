@@ -1,6 +1,6 @@
 "use client"
 
-import { isMicroApp, DooTaskUserInfo, getUserInfo, interceptBack, isMainElectron as isMainElectronTool, setCapsuleConfig } from "@dootask/tools"
+import { isMicroApp, DooTaskUserInfo, getUserInfo, getSafeArea, isMainElectron as isMainElectronTool, setCapsuleConfig } from "@dootask/tools"
 import { createContext, useContext, useEffect } from "react"
 import { useState } from "react"
 import { authApi, settingsApi } from "./api"
@@ -37,37 +37,37 @@ export function DootaskProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (typeof window === "undefined") return
+    let cancelled = false
+    const loadSafeArea = async () => {
+      try {
+        const isMicro = await isMicroApp()
+        if (!isMicro || cancelled) return
+        const area = await getSafeArea()
+        if (!area || cancelled) return
+        const rootStyle = document.documentElement.style
+        rootStyle.setProperty("--safe-area-top", `${area.top ?? 0}px`)
+        rootStyle.setProperty("--safe-area-bottom", `${area.bottom ?? 0}px`)
+      } catch {
+        // ignore unsupported environments
+      }
+    }
+    loadSafeArea()
+    return () => {
+      cancelled = true
+      const rootStyle = document.documentElement.style
+      rootStyle.removeProperty("--safe-area-top")
+      rootStyle.removeProperty("--safe-area-bottom")
+    }
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
     const resizeListener = () => {
       setIsLargeScreen(window.innerWidth > 1024)
     }
     resizeListener()
     window.addEventListener("resize", resizeListener)
     return () => window.removeEventListener("resize", resizeListener)
-  }, [])
-
-  useEffect(() => {
-    let cleanup: (() => void) | undefined
-    interceptBack(() => {
-      if (typeof window === "undefined") return false
-
-      try {
-        // 查找是否有 data-slot="dialog-close" 的元素
-        const dialogClose = document.querySelector("[data-slot='dialog-close']") as HTMLButtonElement
-        if (dialogClose) {
-          dialogClose.click()
-          return true
-        }
-      } catch {
-        // 如果找不到，则返回 false
-      }
-
-      return false
-    }).then((fn) => {
-      cleanup = fn
-    })
-    return () => {
-      cleanup?.()
-    }
   }, [])
 
   useEffect(() => {

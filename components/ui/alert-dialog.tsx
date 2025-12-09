@@ -5,6 +5,7 @@ import * as AlertDialogPrimitive from "@radix-ui/react-alert-dialog"
 
 import { cn } from "@/lib/utils"
 import { buttonVariants } from "@/components/ui/button"
+import { useInterceptBack } from "@/hooks/use-intercept-back"
 
 function AlertDialog({
   ...props
@@ -44,8 +45,16 @@ function AlertDialogOverlay({
   )
 }
 
+function AlertDialogInterceptor() {
+  const closeRef = React.useRef<HTMLButtonElement>(null)
+  const close = React.useCallback(() => closeRef.current?.click(), [])
+  useInterceptBack(close)
+  return <AlertDialogCancel ref={closeRef} className="hidden" />
+}
+
 function AlertDialogContent({
   className,
+  children,
   ...props
 }: React.ComponentProps<typeof AlertDialogPrimitive.Content>) {
   return (
@@ -58,7 +67,10 @@ function AlertDialogContent({
           className
         )}
         {...props}
-      />
+      >
+        {children}
+        <AlertDialogInterceptor />
+      </AlertDialogPrimitive.Content>
     </AlertDialogPortal>
   )
 }

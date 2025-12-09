@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Plus, Edit, Trash2, Users, Search } from "lucide-react"
@@ -136,38 +136,40 @@ export default function DepartmentsPage() {
             <DialogHeader>
               <DialogTitle>{editingDepartment ? "编辑部门" : "添加部门"}</DialogTitle>
             </DialogHeader>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="name">部门名称</Label>
-                <Input
-                  id="name"
-                  value={formData.name}
-                  onChange={e => setFormData({ ...formData, name: e.target.value })}
-                  required
-                />
-              </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="description">部门描述</Label>
-                <Input
-                  id="description"
-                  value={formData.description}
-                  onChange={e => setFormData({ ...formData, description: e.target.value })}
-                />
-              </div>
-              <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 sm:space-x-2 sm:gap-0">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setDialogOpen(false)}
-                  className="w-full sm:w-auto"
-                >
-                  取消
-                </Button>
-                <Button type="submit" className="w-full sm:w-auto">
-                  {editingDepartment ? "更新" : "创建"}
-                </Button>
-              </div>
-            </form>
+            <DialogBody>
+              <form id="department-form" onSubmit={handleSubmit} className="space-y-4">
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="name">部门名称</Label>
+                  <Input
+                    id="name"
+                    value={formData.name}
+                    onChange={e => setFormData({ ...formData, name: e.target.value })}
+                    required
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="description">部门描述</Label>
+                  <Input
+                    id="description"
+                    value={formData.description}
+                    onChange={e => setFormData({ ...formData, description: e.target.value })}
+                  />
+                </div>
+              </form>
+            </DialogBody>
+            <DialogFooter className="flex-col-reverse sm:flex-row sm:justify-end gap-2 sm:space-x-2 sm:gap-0">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setDialogOpen(false)}
+                className="w-full sm:w-auto"
+              >
+                取消
+              </Button>
+              <Button type="submit" form="department-form" className="w-full sm:w-auto">
+                {editingDepartment ? "更新" : "创建"}
+              </Button>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>

@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -685,7 +685,7 @@ export default function InvitationsPage() {
           </DialogHeader>
           {selectedInvitation && (
             <>
-              <div className="flex-1 overflow-y-auto space-y-4 -mx-6 px-6 pb-2" ref={detailsRef}>
+              <DialogBody className="flex-1 space-y-4 -mx-6 px-6 pb-2" ref={detailsRef}>
                 {/* 基本信息 */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   <div className="bg-muted/50 p-3 rounded">
@@ -891,48 +891,45 @@ export default function InvitationsPage() {
                     </div>
                   </div>
                 )}
-              </div>
+              </DialogBody>
 
-              {/* 操作按钮 */}
-              <div className="flex-shrink-0">
-                <div className="flex flex-col sm:flex-row justify-end gap-2 sm:space-x-2 sm:gap-0">
-                  {selectedInvitation.status === "pending" && (
-                    <>
-                      <Button
-                        onClick={() => handleAcceptInvitation(selectedInvitation.id)}
-                        className="w-full sm:w-auto"
-                      >
-                        <CheckCircle className="w-4 h-4 mr-2" />
-                        接受邀请
-                      </Button>
-                      <Button
-                        variant="outline"
-                        onClick={() => handleDeclineInvitation(selectedInvitation.id)}
-                        className="w-full sm:w-auto"
-                      >
-                        <XCircle className="w-4 h-4 mr-2" />
-                        拒绝邀请
-                      </Button>
-                    </>
-                  )}
-                  {selectedInvitation.status === "accepted" && (
+              <DialogFooter className="flex-col sm:flex-row justify-end gap-2 sm:space-x-2 sm:gap-0">
+                {selectedInvitation.status === "pending" && (
+                  <>
                     <Button
-                      onClick={() => handleCompleteInvitation(selectedInvitation.id)}
+                      onClick={() => handleAcceptInvitation(selectedInvitation.id)}
                       className="w-full sm:w-auto"
                     >
-                      <Award className="w-4 h-4 mr-2" />
-                      完成评分
+                      <CheckCircle className="w-4 h-4 mr-2" />
+                      接受邀请
                     </Button>
-                  )}
+                    <Button
+                      variant="outline"
+                      onClick={() => handleDeclineInvitation(selectedInvitation.id)}
+                      className="w-full sm:w-auto"
+                    >
+                      <XCircle className="w-4 h-4 mr-2" />
+                      拒绝邀请
+                    </Button>
+                  </>
+                )}
+                {selectedInvitation.status === "accepted" && (
                   <Button
-                    variant="outline"
-                    onClick={() => setDialogOpen(false)}
+                    onClick={() => handleCompleteInvitation(selectedInvitation.id)}
                     className="w-full sm:w-auto"
                   >
-                    关闭
+                    <Award className="w-4 h-4 mr-2" />
+                    完成评分
                   </Button>
-                </div>
-              </div>
+                )}
+                <Button
+                  variant="outline"
+                  onClick={() => setDialogOpen(false)}
+                  className="w-full sm:w-auto"
+                >
+                  关闭
+                </Button>
+              </DialogFooter>
             </>
           )}
         </DialogContent>

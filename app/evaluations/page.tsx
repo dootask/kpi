@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -1520,131 +1520,133 @@ export default function EvaluationsPage() {
         {isHR && (
           <div className="flex flex-wrap gap-2 w-full sm:w-auto lg:mt-8">
             <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-              <DialogTrigger asChild>
-                <Button className="w-full sm:w-auto">
-                  <Plus className="w-4 h-4 mr-2" />
-                  创建考核
-                </Button>
-              </DialogTrigger>
+            <DialogTrigger asChild>
+              <Button className="w-full sm:w-auto">
+                <Plus className="w-4 h-4 mr-2" />
+                创建考核
+              </Button>
+            </DialogTrigger>
             <DialogContent className="w-[95vw] sm:max-w-md mx-auto">
               <DialogHeader>
                 <DialogTitle>创建新考核</DialogTitle>
               </DialogHeader>
-              <form onSubmit={handleCreateEvaluation} className="space-y-4">
-                <EmployeeSelector
-                  selectedEmployeeIds={formData.employee_ids}
-                  onSelectionChange={employeeIds => setFormData(prev => ({ ...prev, employee_ids: employeeIds }))}
-                  label="员工"
-                  placeholder="选择员工..."
-                  maxDisplayTags={5}
-                />
-                <div className="flex flex-col gap-2">
-                  <Label htmlFor="template">考核模板</Label>
-                  <Select
-                    value={formData.template_id}
-                    onValueChange={value => setFormData({ ...formData, template_id: value })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="选择模板" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {templates.map(template => (
-                        <SelectItem key={template.id} value={template.id.toString()}>
-                          {template.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="flex flex-col gap-2">
-                  <Label htmlFor="period">考核周期</Label>
-                  <Select value={formData.period} onValueChange={value => setFormData({ ...formData, period: value })}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="选择周期" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="monthly">月度</SelectItem>
-                      <SelectItem value="quarterly">季度</SelectItem>
-                      <SelectItem value="yearly">年度</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="flex flex-col gap-2">
-                  <Label htmlFor="year">年份</Label>
-                  <Select
-                    value={formData.year.toString()}
-                    onValueChange={value => setFormData({ ...formData, year: parseInt(value) })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="选择年份" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {Array.from({ length: 10 }, (_, i) => {
-                        const year = new Date().getFullYear() - i
-                        return (
-                          <SelectItem key={year} value={year.toString()}>
-                            {year}年
-                          </SelectItem>
-                        )
-                      })}
-                    </SelectContent>
-                  </Select>
-                </div>
-                {formData.period === "monthly" && (
+              <DialogBody>
+                <form id="evaluation-create-form" onSubmit={handleCreateEvaluation} className="space-y-4">
+                  <EmployeeSelector
+                    selectedEmployeeIds={formData.employee_ids}
+                    onSelectionChange={employeeIds => setFormData(prev => ({ ...prev, employee_ids: employeeIds }))}
+                    label="员工"
+                    placeholder="选择员工..."
+                    maxDisplayTags={5}
+                  />
                   <div className="flex flex-col gap-2">
-                    <Label htmlFor="month">月份</Label>
+                    <Label htmlFor="template">考核模板</Label>
                     <Select
-                      value={formData.month.toString()}
-                      onValueChange={value => setFormData({ ...formData, month: parseInt(value) })}
+                      value={formData.template_id}
+                      onValueChange={value => setFormData({ ...formData, template_id: value })}
                     >
                       <SelectTrigger>
-                        <SelectValue placeholder="选择月份" />
+                        <SelectValue placeholder="选择模板" />
                       </SelectTrigger>
                       <SelectContent>
-                        {[...Array(12)].map((_, i) => (
-                          <SelectItem key={i + 1} value={(i + 1).toString()}>
-                            {i + 1}月
+                        {templates.map(template => (
+                          <SelectItem key={template.id} value={template.id.toString()}>
+                            {template.name}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </div>
-                )}
-                {formData.period === "quarterly" && (
                   <div className="flex flex-col gap-2">
-                    <Label htmlFor="quarter">季度</Label>
-                    <Select
-                      value={formData.quarter.toString()}
-                      onValueChange={value => setFormData({ ...formData, quarter: parseInt(value) })}
-                    >
+                    <Label htmlFor="period">考核周期</Label>
+                    <Select value={formData.period} onValueChange={value => setFormData({ ...formData, period: value })}>
                       <SelectTrigger>
-                        <SelectValue placeholder="选择季度" />
+                        <SelectValue placeholder="选择周期" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="1">第一季度</SelectItem>
-                        <SelectItem value="2">第二季度</SelectItem>
-                        <SelectItem value="3">第三季度</SelectItem>
-                        <SelectItem value="4">第四季度</SelectItem>
+                        <SelectItem value="monthly">月度</SelectItem>
+                        <SelectItem value="quarterly">季度</SelectItem>
+                        <SelectItem value="yearly">年度</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
-                )}
-                <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 sm:space-x-2 sm:gap-0">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setDialogOpen(false)}
-                    className="w-full sm:w-auto"
-                  >
-                    取消
-                  </Button>
-                  <Button type="submit" className="w-full sm:w-auto">
-                    创建
-                  </Button>
-                </div>
-              </form>
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="year">年份</Label>
+                    <Select
+                      value={formData.year.toString()}
+                      onValueChange={value => setFormData({ ...formData, year: parseInt(value) })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="选择年份" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {Array.from({ length: 10 }, (_, i) => {
+                          const year = new Date().getFullYear() - i
+                          return (
+                            <SelectItem key={year} value={year.toString()}>
+                              {year}年
+                            </SelectItem>
+                          )
+                        })}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {formData.period === "monthly" && (
+                    <div className="flex flex-col gap-2">
+                      <Label htmlFor="month">月份</Label>
+                      <Select
+                        value={formData.month.toString()}
+                        onValueChange={value => setFormData({ ...formData, month: parseInt(value) })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="选择月份" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {[...Array(12)].map((_, i) => (
+                            <SelectItem key={i + 1} value={(i + 1).toString()}>
+                              {i + 1}月
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                  {formData.period === "quarterly" && (
+                    <div className="flex flex-col gap-2">
+                      <Label htmlFor="quarter">季度</Label>
+                      <Select
+                        value={formData.quarter.toString()}
+                        onValueChange={value => setFormData({ ...formData, quarter: parseInt(value) })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="选择季度" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="1">第一季度</SelectItem>
+                          <SelectItem value="2">第二季度</SelectItem>
+                          <SelectItem value="3">第三季度</SelectItem>
+                          <SelectItem value="4">第四季度</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                </form>
+              </DialogBody>
+              <DialogFooter className="flex-col-reverse sm:flex-row sm:justify-end gap-2 sm:space-x-2 sm:gap-0">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setDialogOpen(false)}
+                  className="w-full sm:w-auto"
+                >
+                  取消
+                </Button>
+                <Button type="submit" form="evaluation-create-form" className="w-full sm:w-auto">
+                  创建
+                </Button>
+              </DialogFooter>
             </DialogContent>
-          </Dialog>
+            </Dialog>
             <Button
               variant="outline"
               onClick={handleQuickCreate}
@@ -1916,7 +1918,7 @@ export default function EvaluationsPage() {
           {selectedEvaluation && (
             <>
               {/* 可滚动的内容区域 */}
-              <div className="flex-1 overflow-y-auto space-y-4 -mx-6 px-6 pb-2">
+              <DialogBody className="flex-1 space-y-4 -mx-6 px-6 pb-2">
                 {/* 基本信息卡片 */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                   <div className="bg-muted/50 p-3 rounded">
@@ -2191,7 +2193,7 @@ export default function EvaluationsPage() {
                                   <DialogHeader>
                                     <DialogTitle>邀请评分</DialogTitle>
                                   </DialogHeader>
-                                  <div className="space-y-4">
+                                  <DialogBody className="space-y-4">
                                     {/* 已邀请人员提示 */}
                                     {invitations.length > 0 && (
                                       <div className="bg-blue-50/50 dark:bg-blue-950/50 p-3 rounded-lg border border-blue-200 dark:border-blue-800">
@@ -2242,15 +2244,15 @@ export default function EvaluationsPage() {
                                         className="min-h-[80px]"
                                       />
                                     </div>
-                                    <div className="flex justify-end space-x-2">
-                                      <Button variant="outline" onClick={() => setInvitationDialogOpen(false)}>
-                                        取消
-                                      </Button>
-                                      <Button onClick={handleCreateInvitation} disabled={isCreatingInvitation}>
-                                        {isCreatingInvitation ? "创建中..." : "发送邀请"}
-                                      </Button>
-                                    </div>
-                                  </div>
+                                  </DialogBody>
+                                  <DialogFooter className="justify-end gap-2">
+                                    <Button variant="outline" onClick={() => setInvitationDialogOpen(false)}>
+                                      取消
+                                    </Button>
+                                    <Button onClick={handleCreateInvitation} disabled={isCreatingInvitation}>
+                                      {isCreatingInvitation ? "创建中..." : "发送邀请"}
+                                    </Button>
+                                  </DialogFooter>
                                 </DialogContent>
                               </Dialog>
                             )}
@@ -3112,16 +3114,14 @@ export default function EvaluationsPage() {
                     </Card>
                   </TabsContent>
                 </Tabs>
-              </div>
+              </DialogBody>
 
-              {/* 固定的流程控制按钮区域 */}
-              <div className="flex-shrink-0">
-                <div className="flex flex-col sm:flex-row justify-end gap-2 sm:space-x-2 sm:gap-0">
-                  {canPerformAction(selectedEvaluation, "self") && (
-                    <Button
-                      onClick={() => handleCompleteStage(selectedEvaluation.id, "self")}
-                      className="w-full sm:w-auto"
-                      disabled={isSubmittingSelfEvaluation}
+              <DialogFooter className="flex-col sm:flex-row justify-end gap-2 sm:space-x-2 sm:gap-0">
+                {canPerformAction(selectedEvaluation, "self") && (
+                  <Button
+                    onClick={() => handleCompleteStage(selectedEvaluation.id, "self")}
+                    className="w-full sm:w-auto"
+                    disabled={isSubmittingSelfEvaluation}
                     >
                       {isSubmittingSelfEvaluation ? "提交中..." : "完成自评"}
                     </Button>
@@ -3159,11 +3159,11 @@ export default function EvaluationsPage() {
                       variant="outline"
                       className="w-full sm:w-auto"
                     >
-                      提出异议
-                    </Button>
-                  )}
-                  {canPerformAction(selectedEvaluation, "handleObjection") && (
-                    <Button
+                  提出异议
+                </Button>
+              )}
+              {canPerformAction(selectedEvaluation, "handleObjection") && (
+                <Button
                       onClick={() => {
                         if (selectedEvaluation) {
                           setHandleObjectionForm({
@@ -3178,12 +3178,11 @@ export default function EvaluationsPage() {
                     >
                       处理异议
                     </Button>
-                  )}
-                  <Button variant="outline" onClick={() => setScoreDialogOpen(false)} className="w-full sm:w-auto">
-                    关闭
-                  </Button>
-                </div>
-              </div>
+              )}
+              <Button variant="outline" onClick={() => setScoreDialogOpen(false)} className="w-full sm:w-auto">
+                关闭
+              </Button>
+              </DialogFooter>
             </>
           )}
         </DialogContent>
@@ -3195,7 +3194,7 @@ export default function EvaluationsPage() {
           <DialogHeader>
             <DialogTitle>提出异议</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 py-4">
+          <DialogBody className="space-y-4 py-4">
             <div className="bg-yellow-50 dark:bg-yellow-950/50 border border-yellow-200 dark:border-yellow-800 rounded-lg p-3">
               <p className="text-sm text-yellow-800 dark:text-yellow-200">
                 ⚠️ 提交异议后将无法撤回或修改，请谨慎填写。
@@ -3218,8 +3217,8 @@ export default function EvaluationsPage() {
                 rows={6}
               />
             </div>
-          </div>
-          <div className="flex justify-end gap-2">
+          </DialogBody>
+          <DialogFooter className="justify-end gap-2">
             <Button
               variant="outline"
               onClick={() => {
@@ -3233,7 +3232,7 @@ export default function EvaluationsPage() {
             <Button onClick={handleSubmitObjection} disabled={isSubmittingObjection}>
               {isSubmittingObjection ? "提交中..." : "提交异议"}
             </Button>
-          </div>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -3243,7 +3242,7 @@ export default function EvaluationsPage() {
           <DialogHeader>
             <DialogTitle>处理异议</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 py-4">
+          <DialogBody className="space-y-4 py-4">
             {selectedEvaluation && (
               <>
                 {selectedEvaluation.has_objection && selectedEvaluation.objection_reason && (
@@ -3303,8 +3302,8 @@ export default function EvaluationsPage() {
                 </div>
               </>
             )}
-          </div>
-          <div className="flex justify-end gap-2">
+          </DialogBody>
+          <DialogFooter className="justify-end gap-2">
             <Button
               variant="outline"
               onClick={() => {
@@ -3321,7 +3320,7 @@ export default function EvaluationsPage() {
             <Button onClick={handleObjectionHandle} disabled={isSubmittingObjection}>
               {isSubmittingObjection ? "处理中..." : "处理异议"}
             </Button>
-          </div>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

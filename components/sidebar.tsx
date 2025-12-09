@@ -163,7 +163,7 @@ export function Sidebar({ isMobileMenuOpen, setIsMobileMenuOpen }: SidebarProps)
       {/* 侧边栏 */}
       <div
         className={cn(
-          "fixed lg:static inset-y-0 left-0 z-20 w-64 h-screen bg-sidebar shadow-lg transform transition-transform duration-300 ease-in-out lg:transform-none flex flex-col",
+          "fixed lg:static inset-y-0 left-0 z-20 w-64 h-screen lg:h-full bg-sidebar shadow-lg transform transition-transform duration-300 ease-in-out lg:transform-none flex flex-col pt-[var(--safe-area-top,0px)] pb-[var(--safe-area-bottom,0px)] lg:pt-0 lg:pb-0",
           isMobileMenuOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
         )}
       >

@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
 import { Check, ChevronsUpDown, CircleMinus, Loader2, Search, Users } from "lucide-react"
 import { Checkbox } from "./ui/checkbox"
@@ -216,15 +216,15 @@ export function EmployeeSelector({
           </Button>
         </DialogTrigger>
 
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Users className="h-5 w-5" />
-              选择员工 ({selectedEmployeeIds.length} 已选择)
-            </DialogTitle>
-          </DialogHeader>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Users className="h-5 w-5" />
+                选择员工 ({selectedEmployeeIds.length} 已选择)
+              </DialogTitle>
+            </DialogHeader>
 
-          <div className="space-y-4">
+          <DialogBody className="space-y-4">
             {/* 搜索框 */}
             <div className="relative">
               {loading ? (
@@ -334,17 +334,15 @@ export function EmployeeSelector({
                 ))
               )}
             </div>
-
-            {/* 底部操作 */}
-            <div className="flex justify-end gap-2 pt-2">
-              <Button type="button" variant="outline" onClick={() => handleDialogClose(false)}>
-                取消
-              </Button>
-              <Button type="button" onClick={() => handleDialogClose(false)}>
-                确定 ({selectedEmployeeIds.length})
-              </Button>
-            </div>
-          </div>
+          </DialogBody>
+          <DialogFooter className="justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => handleDialogClose(false)}>
+              取消
+            </Button>
+            <Button type="button" onClick={() => handleDialogClose(false)}>
+              确定 ({selectedEmployeeIds.length})
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

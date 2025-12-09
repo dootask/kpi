@@ -5,7 +5,7 @@ menu_items:
       zh: 绩效考核
     url: "apps/kpi?theme={system_theme}"
     url_type: iframe
-    background: "#f9f9f9|#e8e8e8"
+    immersive: true
 require_version:
  version: "> 1.1.66"
  reason:

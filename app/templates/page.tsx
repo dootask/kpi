@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -197,54 +197,56 @@ export default function TemplatesPage() {
             <DialogHeader>
               <DialogTitle>{editingTemplate ? "编辑模板" : "创建模板"}</DialogTitle>
             </DialogHeader>
-            <form onSubmit={handleTemplateSubmit} className="space-y-4">
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="name">模板名称</Label>
-                <Input
-                  id="name"
-                  value={templateFormData.name}
-                  onChange={e => setTemplateFormData({ ...templateFormData, name: e.target.value })}
-                  required
-                />
-              </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="description">模板描述</Label>
-                <Input
-                  id="description"
-                  value={templateFormData.description}
-                  onChange={e => setTemplateFormData({ ...templateFormData, description: e.target.value })}
-                />
-              </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="period">考核周期</Label>
-                <Select
-                  value={templateFormData.period}
-                  onValueChange={value => setTemplateFormData({ ...templateFormData, period: value })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="选择考核周期" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="monthly">月度</SelectItem>
-                    <SelectItem value="quarterly">季度</SelectItem>
-                    <SelectItem value="yearly">年度</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 sm:space-x-2 sm:gap-0">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setTemplateDialogOpen(false)}
-                  className="w-full sm:w-auto"
-                >
-                  取消
-                </Button>
-                <Button type="submit" className="w-full sm:w-auto">
-                  {editingTemplate ? "更新" : "创建"}
-                </Button>
-              </div>
-            </form>
+            <DialogBody>
+              <form id="template-form" onSubmit={handleTemplateSubmit} className="space-y-4">
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="name">模板名称</Label>
+                  <Input
+                    id="name"
+                    value={templateFormData.name}
+                    onChange={e => setTemplateFormData({ ...templateFormData, name: e.target.value })}
+                    required
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="description">模板描述</Label>
+                  <Input
+                    id="description"
+                    value={templateFormData.description}
+                    onChange={e => setTemplateFormData({ ...templateFormData, description: e.target.value })}
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="period">考核周期</Label>
+                  <Select
+                    value={templateFormData.period}
+                    onValueChange={value => setTemplateFormData({ ...templateFormData, period: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="选择考核周期" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="monthly">月度</SelectItem>
+                      <SelectItem value="quarterly">季度</SelectItem>
+                      <SelectItem value="yearly">年度</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </form>
+            </DialogBody>
+            <DialogFooter className="flex-col-reverse sm:flex-row sm:justify-end gap-2 sm:space-x-2 sm:gap-0">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setTemplateDialogOpen(false)}
+                className="w-full sm:w-auto"
+              >
+                取消
+              </Button>
+              <Button type="submit" form="template-form" className="w-full sm:w-auto">
+                {editingTemplate ? "更新" : "创建"}
+              </Button>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>
@@ -336,11 +338,12 @@ export default function TemplatesPage() {
                     添加项目
                   </Button>
                   <Dialog open={itemDialogOpen} onOpenChange={setItemDialogOpen}>
-                    <DialogContent className="w-[95vw] sm:max-w-md mx-auto">
-                      <DialogHeader>
-                        <DialogTitle>{editingItem ? "编辑KPI项目" : "添加KPI项目"}</DialogTitle>
-                      </DialogHeader>
-                      <form onSubmit={handleItemSubmit} className="space-y-4">
+                  <DialogContent className="w-[95vw] sm:max-w-md mx-auto">
+                    <DialogHeader>
+                      <DialogTitle>{editingItem ? "编辑KPI项目" : "添加KPI项目"}</DialogTitle>
+                    </DialogHeader>
+                    <DialogBody>
+                      <form id="template-item-form" onSubmit={handleItemSubmit} className="space-y-4">
                         <div className="flex flex-col gap-2">
                           <Label htmlFor="item-name">项目名称</Label>
                           <Input
@@ -385,22 +388,23 @@ export default function TemplatesPage() {
                             required
                           />
                         </div>
-                        <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 sm:space-x-2 sm:gap-0">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            onClick={() => setItemDialogOpen(false)}
-                            className="w-full sm:w-auto"
-                          >
-                            取消
-                          </Button>
-                          <Button type="submit" className="w-full sm:w-auto">
-                            {editingItem ? "更新" : "创建"}
-                          </Button>
-                        </div>
                       </form>
-                    </DialogContent>
-                  </Dialog>
+                    </DialogBody>
+                    <DialogFooter className="flex-col-reverse sm:flex-row sm:justify-end gap-2 sm:space-x-2 sm:gap-0">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => setItemDialogOpen(false)}
+                        className="w-full sm:w-auto"
+                      >
+                        取消
+                      </Button>
+                      <Button type="submit" form="template-item-form" className="w-full sm:w-auto">
+                        {editingItem ? "更新" : "创建"}
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
                 </CardTitle>
               </CardHeader>
               <CardContent>
