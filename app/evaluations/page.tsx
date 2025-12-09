@@ -47,6 +47,8 @@ import {
   type InvitedScore,
   type PaginatedResponse,
   type EvaluationPaginationParams,
+  type EvaluationPaginatedResponse,
+  type EvaluationStats,
   type PerformanceRule,
 } from "@/lib/api"
 import { useAuth } from "@/lib/auth-context"
@@ -108,12 +110,15 @@ export default function EvaluationsPage() {
   })
 
   // 分页相关状态
-  const [paginationData, setPaginationData] = useState<PaginatedResponse<KPIEvaluation> | null>(null)
+  const [paginationData, setPaginationData] = useState<EvaluationPaginatedResponse | null>(null)
   const [statusFilter, setStatusFilter] = useState<string>("all")
   const [employeeFilter, setEmployeeFilter] = useState<string>("all")
+  
+  // 统计数据状态（从后端获取的汇总数据）
+  const [statsData, setStatsData] = useState<EvaluationStats | null>(null)
 
   // 添加绩效视图Tab相关状态
-  const [viewTab, setViewTab] = useState<"my" | "team">("my") // 默认显示我的绩效
+  const [viewTab, setViewTab] = useState<"my" | "team" | "all">("my") // 默认显示我的绩效
 
   // 使用分页Hook
   const { currentPage, pageSize, setCurrentPage, handlePageSizeChange, resetPagination } = usePagination(10)
@@ -187,35 +192,63 @@ export default function EvaluationsPage() {
         // 我的绩效：只显示自己的
         params.employee_id = currentUser?.id.toString()
       } else if (viewTab === "team") {
-        // 团队绩效：根据角色显示
-        if (/^department:/.test(employeeFilter)) {
-          params.department_id = employeeFilter.replace("department:", "")
-        } else if (employeeFilter && employeeFilter !== "all") {
-          params.employee_id = employeeFilter
-        }
-        // 如果不是HR
-        if (!isHR) {
-          if (isManager) {
-            // 主管默认查看直属下属（跨部门）
-            if (!params.employee_id) {
-              params.manager_id = currentUser?.id.toString()
-            }
-          } else {
-            // 如果是员工，则显示自己
-            params.employee_id = currentUser?.id.toString()
+        // 团队绩效：根据角色显示自己的团队
+        if (isHR) {
+          // HR：团队 = 自己所在部门
+          if (!currentUser?.department_id) {
+            // 没有设置部门：团队绩效视图不展示任何数据
+            setEvaluations([])
+            setPaginationData(null)
+            setLoading(false)
+            return
           }
+          params.department_id = currentUser.department_id.toString()
+
+          // 允许按具体员工进一步筛选（仍限定在本部门内）
+          if (employeeFilter && employeeFilter !== "all" && !/^department:/.test(employeeFilter)) {
+            params.employee_id = employeeFilter
+          }
+        } else if (isManager) {
+          // 主管：团队 = 直属下属（可跨部门）
+          params.manager_id = currentUser?.id.toString()
+          if (employeeFilter && employeeFilter !== "all") {
+            if (/^department:/.test(employeeFilter)) {
+              params.department_id = employeeFilter.replace("department:", "")
+            } else {
+              params.employee_id = employeeFilter
+            }
+          }
+        } else {
+          // 其他角色访问团队视图时，退化为只看自己
+          params.employee_id = currentUser?.id.toString()
+        }
+      } else if (viewTab === "all") {
+        // 全部绩效：仅HR可用
+        if (isHR) {
+          if (/^department:/.test(employeeFilter)) {
+            params.department_id = employeeFilter.replace("department:", "")
+          } else if (employeeFilter && employeeFilter !== "all") {
+            params.employee_id = employeeFilter
+          }
+        } else if (isManager) {
+          // 非预期访问时，主管退化为团队绩效
+          params.manager_id = currentUser?.id.toString()
+        } else {
+          params.employee_id = currentUser?.id.toString()
         }
       }
 
       const response = await evaluationApi.getAll(params)
       setEvaluations(response.data || [])
       setPaginationData(response)
+      setStatsData(response.stats || null)
       refreshUnreadEvaluations()
     } catch (error) {
       console.error("获取评估列表失败:", error)
       setError("获取评估列表失败，请刷新重试")
       setEvaluations([])
       setPaginationData(null)
+      setStatsData(null)
     } finally {
       setLoading(false)
     }
@@ -477,7 +510,7 @@ export default function EvaluationsPage() {
   }, [isHR, selectedEvaluation, fetchPerformanceRule])
 
   // 切换Tab时重置筛选和分页
-  const handleTabChange = (tab: "my" | "team") => {
+  const handleTabChange = (tab: "my" | "team" | "all") => {
     setViewTab(tab)
     setStatusFilter("all")
     setEmployeeFilter("all")
@@ -1422,11 +1455,6 @@ export default function EvaluationsPage() {
     return evaluations // 后端已经处理了分页和筛选，前端直接使用
   }, [currentUser, evaluations])
 
-  // 用于统计的过滤函数，排除已离职员工
-  const getStatisticsEvaluations = useMemo(() => {
-    return getFilteredEvaluations.filter(e => e.employee?.is_active !== false)
-  }, [getFilteredEvaluations])
-
   // 根据评估状态获取得分标签
   const getScoreLabel = (evaluationStatus: string) => {
     switch (evaluationStatus) {
@@ -1667,7 +1695,7 @@ export default function EvaluationsPage() {
             <Award className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-xl sm:text-2xl font-bold">{getStatisticsEvaluations.length}</div>
+            <div className="text-xl sm:text-2xl font-bold">{statsData?.total ?? 0}</div>
             <p className="text-xs text-muted-foreground">全部考核项目</p>
           </CardContent>
         </Card>
@@ -1677,13 +1705,7 @@ export default function EvaluationsPage() {
             <Clock className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-xl sm:text-2xl font-bold">
-              {
-                getStatisticsEvaluations.filter(e =>
-                  ["pending", "self_evaluated", "manager_evaluated", "pending_confirm"].includes(e.status)
-                ).length
-              }
-            </div>
+            <div className="text-xl sm:text-2xl font-bold">{statsData?.pending ?? 0}</div>
             <p className="text-xs text-muted-foreground">需要处理的考核</p>
           </CardContent>
         </Card>
@@ -1693,9 +1715,7 @@ export default function EvaluationsPage() {
             <CheckCircle className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-xl sm:text-2xl font-bold">
-              {getStatisticsEvaluations.filter(e => e.status === "completed").length}
-            </div>
+            <div className="text-xl sm:text-2xl font-bold">{statsData?.completed ?? 0}</div>
             <p className="text-xs text-muted-foreground">已完成的考核</p>
           </CardContent>
         </Card>
@@ -1706,11 +1726,7 @@ export default function EvaluationsPage() {
           </CardHeader>
           <CardContent>
             <div className="text-xl sm:text-2xl font-bold">
-              {getStatisticsEvaluations.length > 0
-                ? formatScore(
-                    getStatisticsEvaluations.reduce((acc, e) => acc + e.total_score, 0) / getStatisticsEvaluations.length
-                  )
-                : 0}
+              {statsData?.avgScore ? formatScore(statsData.avgScore) : 0}
             </div>
             <p className="text-xs text-muted-foreground">总体考核平均分</p>
           </CardContent>
@@ -1746,13 +1762,16 @@ export default function EvaluationsPage() {
                   <SelectItem value="completed">已完成</SelectItem>
                 </SelectContent>
               </Select>
-              {viewTab === "team" && (
+              {(viewTab === "team" || viewTab === "all") && (
                 <EmployeeCombobox
                   value={employeeFilter}
                   onValueChange={setEmployeeFilter}
                   placeholder="员工筛选"
                   className="min-w-24 justify-between"
                   includeInactive={isHR}
+                  limitToDepartmentId={viewTab === "team" && isHR ? currentUser?.department_id : undefined}
+                  limitToManagerId={viewTab === "team" && isManager ? currentUser?.id : undefined}
+                  disabled={viewTab === "team" && isHR && !currentUser?.department_id}
                 />
               )}
               <Button
@@ -1772,25 +1791,36 @@ export default function EvaluationsPage() {
           {/* 绩效视图Tab */}
           {(isManager || isHR) && (
             <div className="mb-6">
-              <Tabs value={viewTab} onValueChange={value => handleTabChange(value as "my" | "team")}>
-                <TabsList className="grid w-full grid-cols-2 lg:w-[400px]">
+              <Tabs value={viewTab} onValueChange={value => handleTabChange(value as "my" | "team" | "all")}>
+                <TabsList className={`grid w-full ${isHR ? "grid-cols-3 lg:w-[520px]" : "grid-cols-2 lg:w-[400px]"}`}>
                   <TabsTrigger value="my" className="flex items-center gap-2">
                     <span className="w-2 h-2 rounded-full bg-blue-500"></span>
                     我的绩效
                   </TabsTrigger>
                   <TabsTrigger value="team" className="flex items-center gap-2">
                     <span className="w-2 h-2 rounded-full bg-green-500"></span>
-                    {isHR ? "全部绩效" : "团队绩效"}
+                    团队绩效
                   </TabsTrigger>
+                  {isHR && (
+                    <TabsTrigger value="all" className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-purple-500"></span>
+                      全部绩效
+                    </TabsTrigger>
+                  )}
                 </TabsList>
                 <TabsContent value="my" className="mt-4">
                   <div className="text-sm text-muted-foreground mb-4">📊 显示您个人的考核记录和绩效状况</div>
                 </TabsContent>
                 <TabsContent value="team" className="mt-4">
                   <div className="text-sm text-muted-foreground mb-4">
-                    {isHR ? "👥 显示全部员工的考核记录" : "👥 显示您管理团队的考核记录"}
+                    {isHR ? "👥 显示您所在部门的考核记录" : "👥 显示您管理团队的考核记录"}
                   </div>
                 </TabsContent>
+                {isHR && (
+                  <TabsContent value="all" className="mt-4">
+                    <div className="text-sm text-muted-foreground mb-4">🌐 显示全公司所有员工的考核记录</div>
+                  </TabsContent>
+                )}
               </Tabs>
             </div>
           )}
@@ -1811,7 +1841,15 @@ export default function EvaluationsPage() {
               {getFilteredEvaluations.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                    {viewTab === "my" ? "您暂无考核记录" : "暂无考核数据"}
+                    {viewTab === "my"
+                      ? "您暂无考核记录"
+                      : viewTab === "team"
+                        ? isHR
+                          ? currentUser?.department_id
+                            ? "暂无团队考核数据"
+                            : "您尚未设置所属部门，暂无法查看团队绩效"
+                          : "暂无团队考核数据（当前暂无下属或团队考核记录）"
+                        : "暂无考核数据"}
                   </TableCell>
                 </TableRow>
               ) : (
@@ -1822,8 +1860,15 @@ export default function EvaluationsPage() {
                   >
                     <TableCell className="font-medium">
                       <div className="flex items-center gap-2">
-                        {evaluation.employee_id === currentUser?.id && evaluation.status !== "completed" && (
-                          <span className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0"></span>
+                        {evaluation.status !== "completed" && (
+                          <span 
+                            className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                              evaluation.employee_id === currentUser?.id 
+                                ? "bg-blue-500" 
+                                : "bg-gray-300 dark:bg-gray-600"
+                            }`}
+                            title={evaluation.employee_id === currentUser?.id ? "我的未完成评估" : "未完成评估"}
+                          ></span>
                         )}
                         <div>
                           {evaluation.employee?.name}

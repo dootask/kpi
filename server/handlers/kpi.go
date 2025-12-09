@@ -204,7 +204,83 @@ func GetEvaluations(c *gin.Context) {
 		query = query.Where("quarter = ?", quarter)
 	}
 
-	// 获取总数
+	// 构建基础统计查询（不含 status 筛选，用于统计卡片）
+	// 只统计在职员工的评估
+	buildStatsQuery := func() *gorm.DB {
+		statsQuery := models.DB.Model(&models.KPIEvaluation{}).
+			Joins("JOIN employees ON kpi_evaluations.employee_id = employees.id").
+			Where("employees.is_active = ?", true)
+		if employeeID != "" {
+			statsQuery = statsQuery.Where("kpi_evaluations.employee_id = ?", employeeID)
+		}
+		if departmentID != "" {
+			statsQuery = statsQuery.Where("employees.department_id = ?", departmentID)
+		}
+		if managerID != "" {
+			statsQuery = statsQuery.Where("employees.manager_id = ?", managerID)
+		}
+		if period != "" {
+			statsQuery = statsQuery.Where("kpi_evaluations.period = ?", period)
+		}
+		if year != "" {
+			statsQuery = statsQuery.Where("kpi_evaluations.year = ?", year)
+		}
+		if month != "" {
+			statsQuery = statsQuery.Where("kpi_evaluations.month = ?", month)
+		}
+		if quarter != "" {
+			statsQuery = statsQuery.Where("kpi_evaluations.quarter = ?", quarter)
+		}
+		return statsQuery
+	}
+
+	// 获取统计数据
+	var statsTotal int64
+	var statsPending int64
+	var statsCompleted int64
+	var statsAvgScore float64
+
+	// 总评估数
+	if err := buildStatsQuery().Count(&statsTotal).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "获取统计数据失败",
+			"message": err.Error(),
+		})
+		return
+	}
+
+	// 待处理数（pending, self_evaluated, manager_evaluated, pending_confirm）
+	if err := buildStatsQuery().Where("kpi_evaluations.status IN ?", []string{"pending", "self_evaluated", "manager_evaluated", "pending_confirm"}).Count(&statsPending).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "获取统计数据失败",
+			"message": err.Error(),
+		})
+		return
+	}
+
+	// 已完成数
+	if err := buildStatsQuery().Where("kpi_evaluations.status = ?", "completed").Count(&statsCompleted).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "获取统计数据失败",
+			"message": err.Error(),
+		})
+		return
+	}
+
+	// 平均分（只计算有分数的评估）
+	var avgResult struct {
+		AvgScore float64
+	}
+	if err := buildStatsQuery().Where("kpi_evaluations.total_score > 0").Select("COALESCE(AVG(kpi_evaluations.total_score), 0) as avg_score").Scan(&avgResult).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "获取统计数据失败",
+			"message": err.Error(),
+		})
+		return
+	}
+	statsAvgScore = avgResult.AvgScore
+
+	// 获取总数（用于分页，受 status 筛选影响）
 	var total int64
 	countQuery := models.DB.Model(&models.KPIEvaluation{})
 	if status != "" {
@@ -261,6 +337,12 @@ func GetEvaluations(c *gin.Context) {
 		"totalPages": totalPages,
 		"hasNext":    page < totalPages,
 		"hasPrev":    page > 1,
+		"stats": gin.H{
+			"total":     statsTotal,
+			"pending":   statsPending,
+			"completed": statsCompleted,
+			"avgScore":  statsAvgScore,
+		},
 	})
 }
 
@@ -639,16 +721,60 @@ func GetPendingEvaluations(c *gin.Context) {
 func GetPendingCountEvaluations(c *gin.Context) {
 	userID := c.GetUint("user_id")
 
-	var count int64
+	// 获取当前用户信息，用于根据角色计算待处理数量
+	var user models.Employee
+	if err := models.DB.First(&user, userID).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取用户信息失败"})
+		return
+	}
+
+	var totalCount int64
+
+	// 所有角色：自己的待自评 + 待确认
 	if err := models.DB.Model(&models.KPIEvaluation{}).
-		Where("employee_id = ? AND status = ?", userID, "pending").
-		Count(&count).Error; err != nil {
+		Where("employee_id = ? AND status IN ?", userID, []string{"pending", "pending_confirm"}).
+		Count(&totalCount).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取待确认评估数量失败"})
 		return
 	}
 
+	// 主管：增加部门内员工的 self_evaluated（待主管评估）
+	if user.Role == "manager" {
+		var deptSelfEvaluatedCount int64
+		if err := models.DB.Model(&models.KPIEvaluation{}).
+			Joins("JOIN employees ON employees.id = kpi_evaluations.employee_id").
+			Where("employees.department_id = ? AND kpi_evaluations.status = ?", user.DepartmentID, "self_evaluated").
+			Count(&deptSelfEvaluatedCount).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "获取待确认评估数量失败"})
+			return
+		}
+		totalCount += deptSelfEvaluatedCount
+	}
+
+	// HR：增加所有 manager_evaluated（待HR审核）+ 部门内员工的 self_evaluated
+	if user.Role == "hr" {
+		var managerEvaluatedCount int64
+		if err := models.DB.Model(&models.KPIEvaluation{}).
+			Where("status = ?", "manager_evaluated").
+			Count(&managerEvaluatedCount).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "获取待确认评估数量失败"})
+			return
+		}
+		totalCount += managerEvaluatedCount
+
+		var deptSelfEvaluatedCount int64
+		if err := models.DB.Model(&models.KPIEvaluation{}).
+			Joins("JOIN employees ON employees.id = kpi_evaluations.employee_id").
+			Where("employees.department_id = ? AND kpi_evaluations.status = ?", user.DepartmentID, "self_evaluated").
+			Count(&deptSelfEvaluatedCount).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "获取待确认评估数量失败"})
+			return
+		}
+		totalCount += deptSelfEvaluatedCount
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"count": count,
+		"count": totalCount,
 	})
 }
 

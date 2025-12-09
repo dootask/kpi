@@ -330,6 +330,19 @@ export interface PaginatedResponse<T> {
   hasPrev: boolean
 }
 
+// 评估统计数据接口
+export interface EvaluationStats {
+  total: number
+  pending: number
+  completed: number
+  avgScore: number
+}
+
+// 带统计数据的评估分页响应接口
+export interface EvaluationPaginatedResponse extends PaginatedResponse<KPIEvaluation> {
+  stats: EvaluationStats
+}
+
 // 分页查询参数接口
 export interface PaginationParams {
   page?: number
@@ -390,7 +403,7 @@ export const performanceRuleApi = {
 
 // KPI评估API
 export const evaluationApi = {
-  getAll: (params?: EvaluationPaginationParams): Promise<PaginatedResponse<KPIEvaluation>> =>
+  getAll: (params?: EvaluationPaginationParams): Promise<EvaluationPaginatedResponse> =>
     api.get("/evaluations", { params }),
   getById: (id: number): Promise<{ data: KPIEvaluation }> => api.get(`/evaluations/${id}`),
   create: (data: Omit<KPIEvaluation, "id" | "created_at">): Promise<{ data: KPIEvaluation }> =>

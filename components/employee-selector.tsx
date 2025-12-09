@@ -359,6 +359,9 @@ interface EmployeeComboboxProps {
   align?: "start" | "center" | "end",
   checkIcon?: boolean
   includeInactive?: boolean // 是否包含已离职员工
+  limitToDepartmentId?: number // 限定只显示该部门员工
+  limitToManagerId?: number // 限定只显示该主管的下属
+  disabled?: boolean
 }
 
 interface ComboboxOption {
@@ -382,20 +385,31 @@ export function EmployeeCombobox({
   align = "center",
   checkIcon = false,
   includeInactive = false,
+  limitToDepartmentId,
+  limitToManagerId,
+  disabled = false,
 }: EmployeeComboboxProps) {
   const { isTouch } = useAppContext()
-  const { isHR, isManager, user } = useAuth()
+  const { isHR, user } = useAuth()
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState("")
   const [employees, setEmployees] = useState<Employee[]>([])
   const [departments, setDepartments] = useState<Department[]>([])
 
-  const fetchSubordinates = useCallback(async () => {
-    if (!user?.id) return
+  // 当限定范围变化时，清空已有数据，避免残留其他视图的员工选项
+  useEffect(() => {
+    setEmployees([])
+    setDepartments([])
+  }, [limitToDepartmentId, limitToManagerId])
+
+  const fetchSubordinates = useCallback(async (managerId?: number) => {
+    const targetManagerId = managerId || user?.id
+    if (!targetManagerId) return
     setLoading(true)
     try {
-      const response = await employeeApi.getSubordinates(user.id)
+      const response = await employeeApi.getSubordinates(targetManagerId)
+      // 限定下属时直接覆盖列表
       setEmployees(response.data || [])
       setDepartments([])
     } catch (error) {
@@ -408,9 +422,12 @@ export function EmployeeCombobox({
   }, [user?.id])
 
   const fetchData = useCallback(async (search: string) => {
-    if (!isHR && isManager) {
+    // 当限定了主管下属时，统一走下属接口
+    if (limitToManagerId) {
+      fetchSubordinates(limitToManagerId)
       return
     }
+
     setLoading(true)
     try {
       // 并行获取员工和部门数据
@@ -418,20 +435,26 @@ export function EmployeeCombobox({
       const employeeParams: PaginationParams = {
         search,
         pageSize: 100,
-        department_id: !isHR ? user?.department_id?.toString() : undefined,
+        department_id: limitToDepartmentId ? limitToDepartmentId.toString() : undefined,
         ...(includeInactive ? {} : { is_active: true }),
       }
 
       const [employeeResponse, departmentResponse] = await Promise.all([
         employeeApi.getAll(employeeParams),
-        !isHR ? Promise.resolve({ data: [] }) : departmentApi.getAll({ search, pageSize: 100 })
+        // 限定部门时不需要部门选项
+        !isHR || limitToDepartmentId ? Promise.resolve({ data: [] }) : departmentApi.getAll({ search, pageSize: 100 })
       ])
 
-      setEmployees(prev => {
-        const newEmployees = employeeResponse.data || []
-        const newEmployeeIds = newEmployees.map(employee => employee.id.toString())
-        return [...newEmployees, ...prev.filter(employee => !newEmployeeIds.includes(employee.id.toString()))]
-      })
+      const newEmployees = employeeResponse.data || []
+      if (limitToDepartmentId) {
+        // 限定部门时直接覆盖，防止混入其他部门员工
+        setEmployees(newEmployees)
+      } else {
+        setEmployees(prev => {
+          const newEmployeeIds = newEmployees.map(employee => employee.id.toString())
+          return [...newEmployees, ...prev.filter(employee => !newEmployeeIds.includes(employee.id.toString()))]
+        })
+      }
 
       setDepartments(prev => {
         const newDepartments = departmentResponse.data || []
@@ -445,7 +468,7 @@ export function EmployeeCombobox({
     } finally {
       setLoading(false)
     }
-  }, [isHR, isManager, user?.department_id, includeInactive])
+  }, [limitToManagerId, fetchSubordinates, limitToDepartmentId, includeInactive, isHR])
 
   const groups = [
     {
@@ -500,13 +523,6 @@ export function EmployeeCombobox({
   }, [employees, departments])
 
   useEffect(() => {
-    if (!isHR && isManager) {
-      if (employees.length === 0) {
-        fetchSubordinates()
-      }
-      return
-    }
-
     const timer = setTimeout(
       () => {
         fetchData(searchTerm)
@@ -514,12 +530,12 @@ export function EmployeeCombobox({
       searchTerm ? 500 : 0
     )
     return () => clearTimeout(timer)
-  }, [searchTerm, fetchData, isHR, isManager, fetchSubordinates, employees.length])
+  }, [searchTerm, fetchData, fetchSubordinates, employees.length, limitToManagerId, limitToDepartmentId])
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button variant="outline" role="combobox" aria-expanded={open} className={className}>
+        <Button variant="outline" role="combobox" aria-expanded={open} className={className} disabled={disabled}>
           {value ? filteredOptions.find(option => option.id === value)?.name : placeholder}
           <ChevronsUpDown className="opacity-50" />
         </Button>
@@ -536,7 +552,7 @@ export function EmployeeCombobox({
           <CommandList>
             <CommandEmpty>{emptyPlaceholder}</CommandEmpty>
             {groups.map((group) => {
-              if (group.type === "department" && !isHR) {
+              if (group.type === "department" && (!isHR || limitToDepartmentId)) {
                 return null
               }
               return (

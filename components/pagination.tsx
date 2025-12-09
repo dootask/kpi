@@ -91,7 +91,7 @@ export function Pagination({
   }
 
   return (
-    <div className={`flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 ${className}`}>
+    <div className={`flex flex-wrap flex-col sm:flex-row sm:items-center sm:justify-between gap-4 ${className}`}>
       {/* 总数信息 */}
       {showTotal && (
         <div className="text-sm text-muted-foreground">
@@ -100,7 +100,7 @@ export function Pagination({
       )}
 
       {/* 分页控件 */}
-      <div className="flex flex-col sm:flex-row items-center gap-4">
+      <div className="flex flex-wrap flex-col sm:flex-row items-center gap-4">
         {/* 每页条数选择器 */}
         {showSizeChanger && (
           <div className="flex items-center gap-2 text-sm">
