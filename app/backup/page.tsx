@@ -179,7 +179,7 @@ export default function BackupPage() {
                   <TableHead>文件大小</TableHead>
                   <TableHead>文件类型</TableHead>
                   <TableHead>创建时间</TableHead>
-                  <TableHead className="w-[250px]">操作</TableHead>
+                  <TableHead className="text-right">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -201,75 +201,73 @@ export default function BackupPage() {
                     <TableCell>
                       {formatDateTime(backup.created_at)}
                     </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => downloadBackup(backup.download_url)}
-                        >
-                          <Download className="w-4 h-4" />
-                        </Button>
+                    <TableCell className="text-right space-x-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => downloadBackup(backup.download_url)}
+                      >
+                        <Download className="w-4 h-4" />
+                      </Button>
 
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button
-                              variant="outline"
-                              size="sm"
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                          >
+                            <RotateCcw className="w-4 h-4" />
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>确认恢复数据库</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              您即将从备份文件 <strong>{backup.file_name}</strong> 恢复数据库。
+                              此操作将覆盖当前所有数据，且不可撤销。
+                              <br /><br />
+                              <span className="text-red-600 font-semibold">
+                                ⚠️ 请确保您了解此操作的后果！
+                              </span>
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>取消</AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={() => restoreBackup(backup.file_name)}
                             >
-                              <RotateCcw className="w-4 h-4" />
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>确认恢复数据库</AlertDialogTitle>
-                              <AlertDialogDescription>
-                                您即将从备份文件 <strong>{backup.file_name}</strong> 恢复数据库。
-                                此操作将覆盖当前所有数据，且不可撤销。
-                                <br /><br />
-                                <span className="text-red-600 font-semibold">
-                                  ⚠️ 请确保您了解此操作的后果！
-                                </span>
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>取消</AlertDialogCancel>
-                              <AlertDialogAction
-                                onClick={() => restoreBackup(backup.file_name)}
-                              >
-                                确认
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button
-                              variant="outline"
-                              size="sm"
+                              确认
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>确认删除备份</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              您即将删除备份文件 <strong>{backup.file_name}</strong>。
+                              此操作不可撤销。
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>取消</AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={() => deleteBackup(backup.file_name)}
                             >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>确认删除备份</AlertDialogTitle>
-                              <AlertDialogDescription>
-                                您即将删除备份文件 <strong>{backup.file_name}</strong>。
-                                此操作不可撤销。
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>取消</AlertDialogCancel>
-                              <AlertDialogAction
-                                onClick={() => deleteBackup(backup.file_name)}
-                              >
-                                确认
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-                      </div>
+                              确认
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
                     </TableCell>
                   </TableRow>
                 ))}

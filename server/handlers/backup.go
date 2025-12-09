@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -20,7 +21,7 @@ import (
 )
 
 // 备份目录
-const BackupDir = "./public/backups"
+const BackupDir = "/web/db/backups"
 
 // 备份响应结构
 type BackupResponse struct {
@@ -140,6 +141,11 @@ func GetBackupHistory(c *gin.Context) {
 			})
 		}
 	}
+
+	// 按创建时间倒序排列，最新的在前面
+	sort.Slice(backups, func(i, j int) bool {
+		return backups[i].CreatedAt.After(backups[j].CreatedAt)
+	})
 
 	c.JSON(http.StatusOK, gin.H{
 		"data":  backups,
