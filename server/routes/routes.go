@@ -18,6 +18,13 @@ func SetupRoutes(r *gin.RouterGroup) {
 		})
 	})
 
+	// 内部系统 Hook（公开，仅用于应用内部调用）
+	hookRoutes := r.Group("/hooks")
+	{
+		hookRoutes.POST("/user/onboard", handlers.SystemUserOnboard)
+		hookRoutes.POST("/user/offboard", handlers.SystemUserOffboard)
+	}
+
 	// 认证路由（公开）
 	publicRoutes := r.Group("/auth")
 	{
