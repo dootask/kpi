@@ -397,15 +397,23 @@ func CreateEvaluation(c *gin.Context) {
 	// 获取完整的评估信息
 	models.DB.Preload("Employee.Department").Preload("Template").Preload("Scores").First(&evaluation, evaluation.ID)
 
-	// 发送 DooTask 机器人通知
-	dooTaskClient := utils.NewDooTaskClient(c.GetHeader("DooTaskAuth"))
-	dooTaskClient.SendBotMessage(evaluation.Employee.DooTaskUserID, fmt.Sprintf(
-		"### 📋 您有新的考核任务，请及时处理。\n\n- **考核模板：** %s\n- **考核周期：** %s\n- **考核时间：** %s\n- **发起人：** %s\n\n> 请前往「应用 - 绩效考核」中查看详情。",
-		evaluation.Template.Name,
-		utils.GetPeriodValue(evaluation.Period, evaluation.Year, evaluation.Month, evaluation.Quarter),
-		evaluation.CreatedAt.Format("2006-01-02"),
-		c.GetString("user_name"),
-	))
+	// 发送 DooTask 机器人通知：创建考核 -> 员工待自评
+	if evaluation.Employee.DooTaskUserID != nil {
+		dooTaskClient := utils.NewDooTaskClient(c.GetHeader("DooTaskAuth"))
+		periodValue := utils.GetPeriodValue(evaluation.Period, evaluation.Year, evaluation.Month, evaluation.Quarter)
+
+		appConfigJSON := utils.BuildKPIAppConfig(evaluation.ID)
+
+		message := fmt.Sprintf(
+			"**你有一条新的绩效考核**\n- 考核模板：%s\n- 考核周期：%s\n- 被评估员工：%s\n\n> <div class=\"open-micro-app\" data-app-config='%s'>查看详情：点击查看详情</div>",
+			evaluation.Template.Name,
+			periodValue,
+			evaluation.Employee.Name,
+			appConfigJSON,
+		)
+
+		_ = dooTaskClient.SendBotMessage(evaluation.Employee.DooTaskUserID, message)
+	}
 
 	// 发送实时通知
 	operatorID := c.GetUint("user_id")
@@ -577,26 +585,77 @@ func UpdateEvaluation(c *gin.Context) {
 		case "self_evaluated":
 			// 完成自评：通知主管
 			if evaluation.Employee.Manager != nil && evaluation.Employee.Manager.DooTaskUserID != nil {
+				appConfigJSON := utils.BuildKPIAppConfig(evaluation.ID)
+
 				message := fmt.Sprintf(
-					"### 📋 「%s」已完成自评，请您进行主管评估。\n\n- **考核模板：** %s\n- **考核周期：** %s\n- **员工姓名：** %s\n\n> 请前往「应用 - 绩效考核」中查看详情。",
-					evaluation.Employee.Name,
+					"**你有一条绩效考核待评估**\n- 考核模板：%s\n- 考核周期：%s\n- 部门员工：%s\n\n> <div class=\"open-micro-app\" data-app-config='%s'>查看详情：点击查看详情</div>",
 					evaluation.Template.Name,
 					periodValue,
 					evaluation.Employee.Name,
+					appConfigJSON,
 				)
-				dooTaskClient.SendBotMessage(evaluation.Employee.Manager.DooTaskUserID, message)
+				_ = dooTaskClient.SendBotMessage(evaluation.Employee.Manager.DooTaskUserID, message)
+			}
+
+		case "manager_evaluated":
+			// 完成主管评分：如仍处于待HR审核阶段，则通知HR
+			// （当启用了绩效规则且自动推进到 pending_confirm 时，这里不会进入）
+			appConfigJSON := utils.BuildKPIAppConfig(evaluation.ID)
+
+			hrUserIDs := GetNotificationService().GetAllHRUsers()
+			for _, hrID := range hrUserIDs {
+				var hr models.Employee
+				if err := models.DB.First(&hr, hrID).Error; err != nil || hr.DooTaskUserID == nil {
+					continue
+				}
+
+				message := fmt.Sprintf(
+					"**你有一条绩效考核待审核**\n- 考核模板：%s\n- 考核周期：%s\n- 部门员工：%s\n\n> <div class=\"open-micro-app\" data-app-config='%s'>查看详情：点击查看详情</div>",
+					evaluation.Template.Name,
+					periodValue,
+					evaluation.Employee.Name,
+					appConfigJSON,
+				)
+
+				_ = dooTaskClient.SendBotMessage(hr.DooTaskUserID, message)
 			}
 
 		case "pending_confirm":
-			// 完成HR审核：通知员工确认
+			// 完成审核（HR人工或规则自动）：通知员工确认
 			if evaluation.Employee.DooTaskUserID != nil {
+				appConfigJSON := utils.BuildKPIAppConfig(evaluation.ID)
+
 				message := fmt.Sprintf(
-					"### 📋 您的考核已完成HR审核，请确认最终得分。\n\n- **考核模板：** %s\n- **考核周期：** %s\n- **总分：** %.1f\n\n> 请前往「应用 - 绩效考核」中查看详情并确认。",
+					"**你的绩效已审核完成，请确认结果**\n- 考核模板：%s\n- 考核周期：%s\n- 总分：%.1f\n\n> <div class=\"open-micro-app\" data-app-config='%s'>查看详情：点击查看详情</div>",
 					evaluation.Template.Name,
 					periodValue,
 					evaluation.TotalScore,
+					appConfigJSON,
 				)
-				dooTaskClient.SendBotMessage(evaluation.Employee.DooTaskUserID, message)
+				_ = dooTaskClient.SendBotMessage(evaluation.Employee.DooTaskUserID, message)
+			}
+
+		case "completed":
+			// 员工确认完成：通知 HR
+			appConfigJSON := utils.BuildKPIAppConfig(evaluation.ID)
+
+			hrUserIDs := GetNotificationService().GetAllHRUsers()
+			for _, hrID := range hrUserIDs {
+				var hr models.Employee
+				if err := models.DB.First(&hr, hrID).Error; err != nil || hr.DooTaskUserID == nil {
+					continue
+				}
+
+				message := fmt.Sprintf(
+					"**绩效已完成**\n- 考核模板：%s\n- 考核周期：%s\n- 部门员工：%s\n- 总分：%.1f\n\n> <div class=\"open-micro-app\" data-app-config='%s'>查看详情：点击查看详情</div>",
+					evaluation.Template.Name,
+					periodValue,
+					evaluation.Employee.Name,
+					evaluation.TotalScore,
+					appConfigJSON,
+				)
+
+				_ = dooTaskClient.SendBotMessage(hr.DooTaskUserID, message)
 			}
 		}
 	}
@@ -1099,6 +1158,44 @@ func SubmitObjection(c *gin.Context) {
 	// 重新加载评估数据
 	models.DB.Preload("Employee").Preload("Employee.Manager").Preload("Template").First(&evaluation, evaluationId)
 
+	// 发送 DooTask 机器人通知给主管和所有HR
+	dooTaskClient := utils.NewDooTaskClient(c.GetHeader("DooTaskAuth"))
+	periodValue := utils.GetPeriodValue(evaluation.Period, evaluation.Year, evaluation.Month, evaluation.Quarter)
+
+	appConfigJSON := utils.BuildKPIAppConfig(evaluation.ID)
+
+	// 通知主管（如果有）
+	if evaluation.Employee.Manager != nil && evaluation.Employee.Manager.DooTaskUserID != nil {
+		message := fmt.Sprintf(
+			"**有绩效异议待处理**\n- 部门员工：%s\n- 考核模板：%s\n- 考核周期：%s\n- 异议原因：%s\n\n> <div class=\"open-micro-app\" data-app-config='%s'>查看详情：点击查看详情</div>",
+			evaluation.Employee.Name,
+			evaluation.Template.Name,
+			periodValue,
+			objectionData.Reason,
+			appConfigJSON,
+		)
+		_ = dooTaskClient.SendBotMessage(evaluation.Employee.Manager.DooTaskUserID, message)
+	}
+
+	// 通知所有HR
+	hrUserIDsForBot := GetNotificationService().GetAllHRUsers()
+	for _, hrID := range hrUserIDsForBot {
+		var hr models.Employee
+		if err := models.DB.First(&hr, hrID).Error; err != nil || hr.DooTaskUserID == nil {
+			continue
+		}
+
+		message := fmt.Sprintf(
+			"**有绩效异议待处理**\n- 部门员工：%s\n- 考核模板：%s\n- 考核周期：%s\n- 异议原因：%s\n\n> <div class=\"open-micro-app\" data-app-config='%s'>查看详情：点击查看详情</div>",
+			evaluation.Employee.Name,
+			evaluation.Template.Name,
+			periodValue,
+			objectionData.Reason,
+			appConfigJSON,
+		)
+		_ = dooTaskClient.SendBotMessage(hr.DooTaskUserID, message)
+	}
+
 	// 发送通知给上级和HR
 	notificationService := GetNotificationService()
 
@@ -1177,6 +1274,41 @@ func HandleObjection(c *gin.Context) {
 
 	// 重新加载评估数据
 	models.DB.Preload("Employee").Preload("Template").First(&evaluation, evaluationId)
+
+	// 发送 DooTask 机器人通知给员工（和可选主管）
+	dooTaskClient := utils.NewDooTaskClient(c.GetHeader("DooTaskAuth"))
+	periodValue := utils.GetPeriodValue(evaluation.Period, evaluation.Year, evaluation.Month, evaluation.Quarter)
+
+	appConfigJSON := utils.BuildKPIAppConfig(evaluation.ID)
+
+	// 通知员工
+	if evaluation.Employee.DooTaskUserID != nil {
+		message := fmt.Sprintf(
+			"**你的绩效异议已处理，请重新确认**\n- 考核模板：%s\n- 考核周期：%s\n- 调整后总分：%.2f\n- 处理说明：%s\n\n> <div class=\"open-micro-app\" data-app-config='%s'>查看详情：点击查看详情</div>",
+			evaluation.Template.Name,
+			periodValue,
+			handleData.TotalScore,
+			handleData.FinalComment,
+			appConfigJSON,
+		)
+		_ = dooTaskClient.SendBotMessage(evaluation.Employee.DooTaskUserID, message)
+	}
+
+	// 通知主管（如果有）
+	var employee models.Employee
+	if err := models.DB.Preload("Manager").First(&employee, evaluation.EmployeeID).Error; err == nil {
+		if employee.Manager != nil && employee.Manager.DooTaskUserID != nil {
+			message := fmt.Sprintf(
+				"**部门员工的绩效异议已处理**\n- 部门员工：%s\n- 考核模板：%s\n- 考核周期：%s\n- 调整后总分：%.2f\n\n> <div class=\"open-micro-app\" data-app-config='%s'>查看详情：点击查看详情</div>",
+				employee.Name,
+				evaluation.Template.Name,
+				periodValue,
+				handleData.TotalScore,
+				appConfigJSON,
+			)
+			_ = dooTaskClient.SendBotMessage(employee.Manager.DooTaskUserID, message)
+		}
+	}
 
 	// 发送通知给员工
 	GetNotificationService().SendNotification(evaluation.EmployeeID, EventObjectionHandled, &evaluation)

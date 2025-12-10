@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useMemo, useRef, useCallback } from "react"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -1433,6 +1434,53 @@ export default function EvaluationsPage() {
     },
     [isHR]
   )
+
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+  const evaluationQueryHandledRef = useRef(false)
+
+  // 支持通过查询参数 evaluation_id 直接打开评估详情
+  useEffect(() => {
+    if (evaluationQueryHandledRef.current) return
+
+    const evaluationIdParam = searchParams.get("evaluation_id")
+    if (!evaluationIdParam) return
+
+    const evaluationId = parseInt(evaluationIdParam, 10)
+    if (Number.isNaN(evaluationId) || evaluationId <= 0) return
+
+    // 如果已选中且相同，无需重复打开
+    if (selectedEvaluation?.id === evaluationId && scoreDialogOpen) return
+
+    const existing = evaluations.find(e => e.id === evaluationId)
+    if (existing) {
+      handleViewDetails(existing)
+      evaluationQueryHandledRef.current = true
+      if (pathname) {
+        router.replace(pathname)
+      }
+      return
+    }
+
+    const fetchAndOpen = async () => {
+      try {
+        const res = await evaluationApi.getById(evaluationId)
+        if (res.data) {
+          handleViewDetails(res.data)
+          evaluationQueryHandledRef.current = true
+          if (pathname) {
+            router.replace(pathname)
+          }
+        }
+      } catch (error) {
+        console.error("通过 evaluation_id 获取评估详情失败:", error)
+      }
+    }
+
+    fetchAndOpen()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, evaluations, handleViewDetails, selectedEvaluation, scoreDialogOpen, pathname])
 
   // 删除评估
   const handleDelete = async (evaluationId: number) => {

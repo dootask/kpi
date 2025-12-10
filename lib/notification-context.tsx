@@ -2,7 +2,6 @@
 
 import { createContext, useContext, useEffect, useState, useCallback, useRef } from "react"
 import { useAuth } from "./auth-context"
-import { toast } from "sonner"
 import { sseApi } from "./api"
 import { storage } from "./storage"
 
@@ -137,15 +136,6 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
             // 心跳消息，不需要特殊处理
             logger.info("收到心跳消息")
           } else {
-            // 业务通知消息
-            const eventData = message.data as NotificationEventData
-
-            // 显示通知
-            toast(eventData.message, {
-              description: `来自 ${eventData.operator_name} - ${new Date(eventData.timestamp).toLocaleString()}`,
-              duration: 5000,
-            })
-
             // 通知所有监听器
             messageCallbacksRef.current.forEach(callback => {
               try {

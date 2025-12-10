@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -43,9 +44,13 @@ import { LoadingInline } from "@/components/loading"
 import { toast } from "sonner"
 
 export default function InvitationsPage() {
-  const { Alert, Confirm, isTouch } = useAppContext()
-  const { refreshUnreadInvitations } = useUnreadContext()
-  const { onMessage } = useNotification()
+const { Alert, Confirm, isTouch } = useAppContext()
+const { refreshUnreadInvitations } = useUnreadContext()
+const { onMessage } = useNotification()
+const router = useRouter()
+const pathname = usePathname()
+const searchParams = useSearchParams()
+const invitationQueryHandledRef = useRef(false)
   const detailsRef = useRef<HTMLDivElement>(null)
   const [invitations, setInvitations] = useState<EvaluationInvitation[]>([])
   const [sentInvitations, setSentInvitations] = useState<EvaluationInvitation[]>([])
@@ -411,6 +416,64 @@ export default function InvitationsPage() {
     // 移除 fetchSentInvitations 依赖
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sentCurrentPage, sentPageSize, statusFilter, activeTab])
+
+  // 通过 URL 查询参数（invitation_id / evaluation_id）直接打开邀请详情
+  useEffect(() => {
+    if (invitationQueryHandledRef.current) return
+
+    const invitationIdParam = searchParams.get("invitation_id")
+    const evaluationIdParam = searchParams.get("evaluation_id")
+
+    const invitationId = invitationIdParam ? parseInt(invitationIdParam, 10) : NaN
+    const evaluationId = evaluationIdParam ? parseInt(evaluationIdParam, 10) : NaN
+
+    // 如果当前已打开同一个邀请，避免重复
+    if (!Number.isNaN(invitationId) && selectedInvitation?.id === invitationId && dialogOpen) {
+      return
+    }
+
+    // 在已有列表中查找目标邀请
+    let target: EvaluationInvitation | undefined
+    if (!Number.isNaN(invitationId)) {
+      target =
+        invitations.find(inv => inv.id === invitationId) ||
+        sentInvitations.find(inv => inv.id === invitationId)
+    } else if (!Number.isNaN(evaluationId)) {
+      target =
+        invitations.find(inv => inv.evaluation_id === evaluationId) ||
+        sentInvitations.find(inv => inv.evaluation_id === evaluationId)
+    }
+
+    if (target) {
+      handleViewInvitation(target)
+      invitationQueryHandledRef.current = true
+      if (pathname) {
+        router.replace(pathname)
+      }
+      return
+    }
+
+    // 如果列表中没有，尝试单独获取邀请详情
+    const fetchAndOpen = async () => {
+      try {
+        if (!Number.isNaN(invitationId)) {
+          const res = await invitationApi.getDetails(invitationId)
+          if (res.data) {
+            handleViewInvitation(res.data)
+            invitationQueryHandledRef.current = true
+            if (pathname) {
+              router.replace(pathname)
+            }
+          }
+        }
+      } catch (error) {
+        console.error("通过查询参数获取邀请详情失败:", error)
+      }
+    }
+
+    fetchAndOpen()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, invitations, sentInvitations, selectedInvitation, dialogOpen, pathname])
 
   return (
     <div className="space-y-6">
