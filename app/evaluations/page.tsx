@@ -329,6 +329,12 @@ export default function EvaluationsPage() {
       return
     }
 
+    // 检查是否邀请被评估员工本人
+    if (selectedEvaluation?.employee?.id && invitationForm.invitee_ids.includes(selectedEvaluation.employee.id)) {
+      Alert("创建失败", "不能邀请考核员工本人进行评分")
+      return
+    }
+
     // 检查是否有重复邀请
     const existingInviteeIds = invitations.map(inv => inv.invitee_id)
     const duplicateIds = invitationForm.invitee_ids.filter(id => existingInviteeIds.includes(id))
@@ -2320,9 +2326,11 @@ export default function EvaluationsPage() {
                                         placeholder="选择要邀请的人员..."
                                         maxDisplayTags={3}
                                         disabledEmployeeIds={
-                                          [...invitations.map(inv => inv.invitee_id), currentUser?.id].filter(
-                                            Boolean
-                                          ) as number[]
+                                          [
+                                            ...invitations.map(inv => inv.invitee_id),
+                                            currentUser?.id,
+                                            selectedEvaluation?.employee?.id,
+                                          ].filter(Boolean) as number[]
                                         }
                                       />
                                     </div>

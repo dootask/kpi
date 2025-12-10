@@ -67,6 +67,14 @@ func CreateInvitation(c *gin.Context) {
 		return
 	}
 
+	// 禁止邀请被评估员工本人
+	for _, inviteeID := range req.InviteeIDs {
+		if inviteeID == evaluation.EmployeeID {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "不能邀请被评估员工本人进行评分"})
+			return
+		}
+	}
+
 	// 获取评估的KPI项目
 	var items []models.KPIItem
 	if err := models.DB.Where("template_id = ?", evaluation.TemplateID).Find(&items).Error; err != nil {
