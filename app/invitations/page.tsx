@@ -740,7 +740,7 @@ const invitationQueryHandledRef = useRef(false)
 
       {/* 邀请详情对话框 */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="w-[95vw] sm:max-w-6xl max-h-[90vh] flex flex-col">
+        <DialogContent className="w-[95vw] sm:max-w-6xl flex flex-col">
           <DialogHeader>
             <DialogTitle>
               邀请评分详情 - {selectedInvitation?.evaluation?.employee?.name}

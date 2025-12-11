@@ -2010,7 +2010,7 @@ export default function EvaluationsPage() {
 
       {/* 评分详情对话框 */}
       <Dialog open={scoreDialogOpen} onOpenChange={setScoreDialogOpen}>
-        <DialogContent className="w-[95vw] sm:max-w-6xl max-h-[90vh] flex flex-col">
+        <DialogContent className="w-[95vw] sm:max-w-6xl flex flex-col">
           <DialogHeader>
             <DialogTitle>考核详情 - {selectedEvaluation?.employee?.name}</DialogTitle>
           </DialogHeader>

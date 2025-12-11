@@ -26,7 +26,7 @@ export function LayoutProvider({ children }: { children: React.ReactNode }) {
   // 主要应用程序布局（需要认证）
   return (
     <ProtectedRoute requireAuth={true}>
-      <div className="h-screen flex flex-col lg:flex-row overflow-hidden pt-[var(--safe-area-top,0px)] pb-[var(--safe-area-bottom,0px)]">
+      <div className="h-screen flex flex-col lg:flex-row overflow-hidden">
         {/* 移动端头部 */}
         <MobileHeader onMenuClick={() => setIsMobileMenuOpen(true)} />
 
@@ -34,7 +34,7 @@ export function LayoutProvider({ children }: { children: React.ReactNode }) {
         <Sidebar isMobileMenuOpen={isMobileMenuOpen} setIsMobileMenuOpen={setIsMobileMenuOpen} />
 
         {/* 主内容区域 */}
-        <main className="flex-1 bg-muted/30 min-w-0 overflow-y-auto">
+        <main className="flex-1 bg-muted/30 min-w-0 overflow-y-auto lg:pt-[var(--safe-area-top,0px)] pb-[var(--safe-area-bottom,0px)]">
           <div className="p-4 lg:p-6">
             <div className="max-w-7xl mx-auto">{children}</div>
           </div>

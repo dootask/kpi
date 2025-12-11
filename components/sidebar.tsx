@@ -163,7 +163,7 @@ export function Sidebar({ isMobileMenuOpen, setIsMobileMenuOpen }: SidebarProps)
       {/* 侧边栏 */}
       <div
         className={cn(
-          "fixed lg:static inset-y-0 left-0 z-20 w-64 h-screen lg:h-full bg-sidebar shadow-lg transform transition-transform duration-300 ease-in-out lg:transform-none flex flex-col pt-[var(--safe-area-top,0px)] pb-[var(--safe-area-bottom,0px)] lg:pt-0 lg:pb-0",
+          "fixed lg:static inset-y-0 left-0 z-20 w-64 h-screen lg:h-full bg-sidebar shadow-lg transform transition-transform duration-300 ease-in-out lg:transform-none flex flex-col pt-[var(--safe-area-top,0px)] pb-[var(--safe-area-bottom,0px)]",
           isMobileMenuOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
         )}
       >
@@ -239,7 +239,7 @@ export function Sidebar({ isMobileMenuOpen, setIsMobileMenuOpen }: SidebarProps)
 export function MobileHeader({ onMenuClick }: { onMenuClick: () => void }) {
   const { unreadEvaluations, unreadInvitations } = useUnreadContext()
   return (
-    <div className="lg:hidden bg-background shadow-sm border-b border-border flex-shrink-0">
+    <div className="lg:hidden bg-background shadow-sm border-b border-border flex-shrink-0 pt-[var(--safe-area-top,0px)]">
       <div className="flex items-center justify-between px-4 py-1.5">
         <button onClick={onMenuClick} className="p-2 rounded-md hover:bg-accent relative">
           <Menu className="w-6 h-6 text-muted-foreground" />
