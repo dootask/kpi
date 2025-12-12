@@ -72,7 +72,9 @@ function DialogContent({
       <DialogPrimitive.Content
         data-slot="dialog-content"
         className={cn(
-          "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 fixed left-1/2 top-1/2 z-50 flex max-h-[calc(100vh-2rem-var(--safe-area-top,0px)-var(--safe-area-bottom,0px))] w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 flex-col gap-4 overflow-hidden rounded-2xl border bg-background p-6 shadow-lg duration-200 sm:max-w-lg",
+          "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 fixed left-1/2 z-50 flex w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 flex-col gap-4 overflow-hidden rounded-2xl border bg-background p-6 shadow-lg duration-200 sm:max-w-lg",
+          "top-[calc(50%+(var(--safe-area-top,0px)-var(--safe-area-bottom,0px))/2)]",
+          "max-h-[calc(100vh-2rem-var(--safe-area-top,0px)-var(--safe-area-bottom,0px))]",
           className
         )}
         onOpenAutoFocus={(event) => {
