@@ -470,6 +470,26 @@ func DeclineInvitation(c *gin.Context) {
 	operatorID := c.GetUint("user_id")
 	GetNotificationService().SendNotification(operatorID, EventInvitationStatusChange, &invitation)
 
+	// 检查评估状态，如果处于manager_evaluated且启用了绩效规则，检查是否所有邀请都已完成
+	var evaluation models.KPIEvaluation
+	if err := models.DB.First(&evaluation, invitation.EvaluationID).Error; err == nil {
+		if evaluation.Status == "manager_evaluated" {
+			// 检查绩效规则是否启用
+			var rule models.PerformanceRule
+			if err := models.DB.First(&rule).Error; err == nil && rule.Enabled {
+				// 检查是否所有邀请都已完成
+				allCompleted, err := areAllInvitationsCompleted(invitation.EvaluationID)
+				if err == nil && allCompleted {
+					// 所有邀请都已完成，自动计算HR评分
+					if err := applyPerformanceRuleForEvaluation(invitation.EvaluationID); err == nil {
+						// 如果绩效规则应用成功，自动将状态推进到pending_confirm
+						models.DB.Model(&evaluation).Update("status", "pending_confirm")
+					}
+				}
+			}
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"message": "邀请拒绝成功",
 		"data":    invitation,
@@ -648,9 +668,57 @@ func CompleteInvitation(c *gin.Context) {
 		return
 	}
 
+	// 计算邀请评分总分并创建自动评论
+	var invitedScores []models.InvitedScore
+	if err := models.DB.Where("invitation_id = ?", inviteID).Find(&invitedScores).Error; err == nil {
+		totalInvitedScore := 0.0
+		for _, score := range invitedScores {
+			if score.Score != nil {
+				totalInvitedScore += *score.Score
+			}
+		}
+
+		// 获取被邀请人信息
+		var invitee models.Employee
+		if err := models.DB.First(&invitee, invitation.InviteeID).Error; err == nil {
+			// 创建自动评论：邀请评分（XXX），总分X
+			commentContent := fmt.Sprintf("邀请评分（%s），总分%s", invitee.Name, formatScore(totalInvitedScore))
+			comment := models.EvaluationComment{
+				EvaluationID: invitation.EvaluationID,
+				UserID:       invitation.InviteeID,
+				Content:      commentContent,
+				IsPrivate:    false,
+			}
+			if err := models.DB.Create(&comment).Error; err != nil {
+				// 评论创建失败不影响主流程，仅记录错误
+				fmt.Printf("创建邀请评分自动评论失败: %v\n", err)
+			}
+		}
+	}
+
 	// 发送实时通知
 	operatorID := c.GetUint("user_id")
 	GetNotificationService().SendNotification(operatorID, EventInvitationStatusChange, &invitation)
+
+	// 检查评估状态，如果处于manager_evaluated且启用了绩效规则，检查是否所有邀请都已完成
+	var evaluation models.KPIEvaluation
+	if err := models.DB.First(&evaluation, invitation.EvaluationID).Error; err == nil {
+		if evaluation.Status == "manager_evaluated" {
+			// 检查绩效规则是否启用
+			var rule models.PerformanceRule
+			if err := models.DB.First(&rule).Error; err == nil && rule.Enabled {
+				// 检查是否所有邀请都已完成
+				allCompleted, err := areAllInvitationsCompleted(invitation.EvaluationID)
+				if err == nil && allCompleted {
+					// 所有邀请都已完成，自动计算HR评分
+					if err := applyPerformanceRuleForEvaluation(invitation.EvaluationID); err == nil {
+						// 如果绩效规则应用成功，自动将状态推进到pending_confirm
+						models.DB.Model(&evaluation).Update("status", "pending_confirm")
+					}
+				}
+			}
+		}
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "邀请评分完成",
@@ -756,6 +824,29 @@ func CancelInvitation(c *gin.Context) {
 	if err := models.DB.Model(&invitation).Update("status", "cancelled").Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "撤销邀请失败"})
 		return
+	}
+
+	// 重新加载邀请数据以获取最新状态
+	models.DB.First(&invitation, uint(inviteID))
+
+	// 检查评估状态，如果处于manager_evaluated且启用了绩效规则，检查是否所有邀请都已完成
+	var evaluation models.KPIEvaluation
+	if err := models.DB.First(&evaluation, invitation.EvaluationID).Error; err == nil {
+		if evaluation.Status == "manager_evaluated" {
+			// 检查绩效规则是否启用
+			var rule models.PerformanceRule
+			if err := models.DB.First(&rule).Error; err == nil && rule.Enabled {
+				// 检查是否所有邀请都已完成
+				allCompleted, err := areAllInvitationsCompleted(invitation.EvaluationID)
+				if err == nil && allCompleted {
+					// 所有邀请都已完成，自动计算HR评分
+					if err := applyPerformanceRuleForEvaluation(invitation.EvaluationID); err == nil {
+						// 如果绩效规则应用成功，自动将状态推进到pending_confirm
+						models.DB.Model(&evaluation).Update("status", "pending_confirm")
+					}
+				}
+			}
+		}
 	}
 
 	// 发送实时通知
@@ -876,10 +967,15 @@ func DeleteInvitation(c *gin.Context) {
 
 	// 验证邀请是否存在
 	var invitation models.EvaluationInvitation
-	if err := models.DB.First(&invitation, uint(inviteID)).Error; err != nil {
+	if err := models.DB.Preload("Evaluation").First(&invitation, uint(inviteID)).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "邀请不存在"})
 		return
 	}
+
+	// 保存评估ID和状态，用于删除后重新计算HR评分
+	evaluationID := invitation.EvaluationID
+	evaluationStatus := invitation.Evaluation.Status
+	wasCompleted := invitation.Status == "completed"
 
 	// 开始事务
 	tx := models.DB.Begin()
@@ -906,6 +1002,19 @@ func DeleteInvitation(c *gin.Context) {
 	if err := tx.Commit().Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "提交事务失败"})
 		return
+	}
+
+	// 如果删除的是已完成的邀请，且评估处于pending_confirm状态，且启用了绩效规则，需要重新计算HR评分
+	if wasCompleted && evaluationStatus == "pending_confirm" {
+		// 检查绩效规则是否启用
+		var rule models.PerformanceRule
+		if err := models.DB.First(&rule).Error; err == nil && rule.Enabled {
+			// 重新计算HR评分
+			if err := applyPerformanceRuleForEvaluation(evaluationID); err != nil {
+				// 重新计算失败不影响删除操作，仅记录错误
+				fmt.Printf("删除邀请后重新计算HR评分失败: %v\n", err)
+			}
+		}
 	}
 
 	// 发送实时通知

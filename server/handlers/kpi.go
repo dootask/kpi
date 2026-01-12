@@ -185,11 +185,16 @@ func GetEvaluations(c *gin.Context) {
 	if employeeID != "" {
 		query = query.Where("employee_id = ?", employeeID)
 	}
-	if departmentID != "" {
-		query = query.Where("employee_id IN (SELECT id FROM employees WHERE department_id = ?)", departmentID)
-	}
-	if managerID != "" {
-		query = query.Where("employee_id IN (SELECT id FROM employees WHERE manager_id = ?)", managerID)
+	// 如果同时提供了departmentID和managerID，使用OR关系（本部门员工 OR 直属下级）
+	if departmentID != "" && managerID != "" {
+		query = query.Where("employee_id IN (SELECT id FROM employees WHERE department_id = ? OR manager_id = ?)", departmentID, managerID)
+	} else {
+		if departmentID != "" {
+			query = query.Where("employee_id IN (SELECT id FROM employees WHERE department_id = ?)", departmentID)
+		}
+		if managerID != "" {
+			query = query.Where("employee_id IN (SELECT id FROM employees WHERE manager_id = ?)", managerID)
+		}
 	}
 	if period != "" {
 		query = query.Where("period = ?", period)
@@ -213,11 +218,16 @@ func GetEvaluations(c *gin.Context) {
 		if employeeID != "" {
 			statsQuery = statsQuery.Where("kpi_evaluations.employee_id = ?", employeeID)
 		}
-		if departmentID != "" {
-			statsQuery = statsQuery.Where("employees.department_id = ?", departmentID)
-		}
-		if managerID != "" {
-			statsQuery = statsQuery.Where("employees.manager_id = ?", managerID)
+		// 如果同时提供了departmentID和managerID，使用OR关系（本部门员工 OR 直属下级）
+		if departmentID != "" && managerID != "" {
+			statsQuery = statsQuery.Where("(employees.department_id = ? OR employees.manager_id = ?)", departmentID, managerID)
+		} else {
+			if departmentID != "" {
+				statsQuery = statsQuery.Where("employees.department_id = ?", departmentID)
+			}
+			if managerID != "" {
+				statsQuery = statsQuery.Where("employees.manager_id = ?", managerID)
+			}
 		}
 		if period != "" {
 			statsQuery = statsQuery.Where("kpi_evaluations.period = ?", period)
@@ -289,11 +299,16 @@ func GetEvaluations(c *gin.Context) {
 	if employeeID != "" {
 		countQuery = countQuery.Where("employee_id = ?", employeeID)
 	}
-	if departmentID != "" {
-		countQuery = countQuery.Where("employee_id IN (SELECT id FROM employees WHERE department_id = ?)", departmentID)
-	}
-	if managerID != "" {
-		countQuery = countQuery.Where("employee_id IN (SELECT id FROM employees WHERE manager_id = ?)", managerID)
+	// 如果同时提供了departmentID和managerID，使用OR关系（本部门员工 OR 直属下级）
+	if departmentID != "" && managerID != "" {
+		countQuery = countQuery.Where("employee_id IN (SELECT id FROM employees WHERE department_id = ? OR manager_id = ?)", departmentID, managerID)
+	} else {
+		if departmentID != "" {
+			countQuery = countQuery.Where("employee_id IN (SELECT id FROM employees WHERE department_id = ?)", departmentID)
+		}
+		if managerID != "" {
+			countQuery = countQuery.Where("employee_id IN (SELECT id FROM employees WHERE manager_id = ?)", managerID)
+		}
 	}
 	if period != "" {
 		countQuery = countQuery.Where("period = ?", period)
@@ -506,12 +521,17 @@ func UpdateEvaluation(c *gin.Context) {
 		// 检查绩效规则是否启用
 		var rule models.PerformanceRule
 		if err := models.DB.First(&rule).Error; err == nil && rule.Enabled {
-			// 如果规则已启用，自动计算HR评分
-			if err := applyPerformanceRuleForEvaluation(evaluation.ID); err == nil {
-				// 如果绩效规则应用成功，自动将状态推进到pending_confirm
-				models.DB.Model(&evaluation).Update("status", "pending_confirm")
-				updateData.Status = "pending_confirm"
+			// 如果规则已启用，检查是否所有邀请都已完成
+			allInvitationsCompleted, err := areAllInvitationsCompleted(evaluation.ID)
+			if err == nil && allInvitationsCompleted {
+				// 所有邀请都已完成，自动计算HR评分
+				if err := applyPerformanceRuleForEvaluation(evaluation.ID); err == nil {
+					// 如果绩效规则应用成功，自动将状态推进到pending_confirm
+					models.DB.Model(&evaluation).Update("status", "pending_confirm")
+					updateData.Status = "pending_confirm"
+				}
 			}
+			// 如果有未完成的邀请，保持manager_evaluated状态，等待所有邀请完成
 		}
 		// 如果规则未启用或应用失败，保持manager_evaluated状态，等待HR手动审核
 	}
@@ -563,6 +583,75 @@ func UpdateEvaluation(c *gin.Context) {
 
 	// 重新加载更新后的数据
 	models.DB.Preload("Employee.Manager").Preload("Template").First(&evaluation, evaluationId)
+
+	// 根据状态变更自动创建绩效评论
+	if updateData.Status != "" {
+		var scores []models.KPIScore
+		if err := models.DB.Where("evaluation_id = ?", evaluationId).Find(&scores).Error; err == nil {
+			switch updateData.Status {
+			case "self_evaluated":
+				// 计算员工自评总分
+				totalSelfScore := 0.0
+				for _, s := range scores {
+					if s.SelfScore != nil {
+						totalSelfScore += *s.SelfScore
+					}
+				}
+				// 创建自动评论：员工自评，总分X
+				commentContent := fmt.Sprintf("员工自评，总分%s", formatScore(totalSelfScore))
+				if err := createAutoComment(evaluation.ID, evaluation.EmployeeID, commentContent); err != nil {
+					// 评论创建失败不影响主流程，仅记录错误
+					fmt.Printf("创建员工自评自动评论失败: %v\n", err)
+				}
+
+			case "manager_evaluated":
+				// 计算主管评分总分
+				totalManagerScore := 0.0
+				for _, s := range scores {
+					if s.ManagerScore != nil {
+						totalManagerScore += *s.ManagerScore
+					}
+				}
+				// 创建自动评论：主管评分，总分X
+				if evaluation.Employee.ManagerID != nil {
+					commentContent := fmt.Sprintf("主管评分，总分%s", formatScore(totalManagerScore))
+					if err := createAutoComment(evaluation.ID, *evaluation.Employee.ManagerID, commentContent); err != nil {
+						fmt.Printf("创建主管评分自动评论失败: %v\n", err)
+					}
+				}
+
+			case "pending_confirm":
+				// 只有在HR手动审核时才创建评论（绩效规则自动计算的情况在applyPerformanceRuleForEvaluation中处理）
+				// 检查是否是通过绩效规则自动计算的（通过检查是否有HR评分且HR评论是自动计算的）
+				isAutoCalculated := false
+				for _, s := range scores {
+					if s.HRScore != nil && s.HRComment == autoHRScoreComment {
+						isAutoCalculated = true
+						break
+					}
+				}
+				// 如果不是自动计算的，说明是HR手动审核，创建评论
+				if !isAutoCalculated {
+					// 计算HR评分总分（使用TotalScore或HRScore之和）
+					totalHRScore := evaluation.TotalScore
+					if totalHRScore == 0 {
+						// 如果TotalScore为0，计算HRScore之和
+						for _, s := range scores {
+							if s.HRScore != nil {
+								totalHRScore += *s.HRScore
+							}
+						}
+					}
+					// 创建自动评论：HR评分，总分X
+					operatorID := c.GetUint("user_id")
+					commentContent := fmt.Sprintf("HR评分，总分%s", formatScore(totalHRScore))
+					if err := createAutoComment(evaluation.ID, operatorID, commentContent); err != nil {
+						fmt.Printf("创建HR评分自动评论失败: %v\n", err)
+					}
+				}
+			}
+		}
+	}
 
 	// 发送DooTask机器人通知（根据状态变更）
 	if updateData.Status != "" {
@@ -1326,6 +1415,55 @@ const (
 	autoHRScoreComment = "系统根据绩效规则自动计算"
 )
 
+// formatScore 格式化分数：整数显示为整数，小数保留2位小数
+func formatScore(score float64) string {
+	if score == float64(int64(score)) {
+		return fmt.Sprintf("%.0f", score)
+	}
+	return fmt.Sprintf("%.2f", score)
+}
+
+// createAutoComment 自动创建绩效评论
+func createAutoComment(evaluationID uint, userID uint, content string) error {
+	comment := models.EvaluationComment{
+		EvaluationID: evaluationID,
+		UserID:       userID,
+		Content:      content,
+		IsPrivate:    false,
+	}
+	return models.DB.Create(&comment).Error
+}
+
+// areAllInvitationsCompleted 检查评估的所有邀请是否都已完成
+// 完成状态包括：completed（已完成）、declined（已拒绝）、cancelled（已撤销）
+// 未完成状态包括：pending（待接受）、accepted（已接受，进行中）
+func areAllInvitationsCompleted(evaluationID uint) (bool, error) {
+	var totalInvitations int64
+	var completedInvitations int64
+
+	// 统计所有邀请数量
+	if err := models.DB.Model(&models.EvaluationInvitation{}).
+		Where("evaluation_id = ?", evaluationID).
+		Count(&totalInvitations).Error; err != nil {
+		return false, err
+	}
+
+	// 如果没有邀请，认为已完成
+	if totalInvitations == 0 {
+		return true, nil
+	}
+
+	// 统计已完成的邀请数量（completed、declined、cancelled）
+	if err := models.DB.Model(&models.EvaluationInvitation{}).
+		Where("evaluation_id = ? AND status IN ?", evaluationID, []string{"completed", "declined", "cancelled"}).
+		Count(&completedInvitations).Error; err != nil {
+		return false, err
+	}
+
+	// 所有邀请都已完成
+	return completedInvitations == totalInvitations, nil
+}
+
 type invitationAggregate struct {
 	Average float64
 	Count   int
@@ -1415,6 +1553,19 @@ func applyPerformanceRuleForEvaluation(evaluationID uint) error {
 		if err := tx.Model(&models.KPIEvaluation{}).Where("id = ?", evaluationID).Update("total_score", totalScore).Error; err != nil {
 			tx.Rollback()
 			return err
+		}
+
+		// 自动创建HR评分评论（系统自动计算）
+		commentContent := fmt.Sprintf("HR评分，总分%s", formatScore(totalScore))
+		comment := models.EvaluationComment{
+			EvaluationID: evaluationID,
+			UserID:       0, // 系统用户ID
+			Content:      commentContent,
+			IsPrivate:    false,
+		}
+		if err := tx.Create(&comment).Error; err != nil {
+			// 评论创建失败不影响主流程，仅记录错误
+			fmt.Printf("创建系统自动HR评分评论失败: %v\n", err)
 		}
 	}
 

@@ -201,23 +201,32 @@ export default function EvaluationsPage() {
       } else if (viewTab === "team") {
         // 团队绩效：根据角色显示自己的团队
         if (isHR) {
-          // HR：团队 = 自己所在部门
+          // HR：团队 = 自己所在部门 + 直属下级（可跨部门）
           if (!currentUser?.department_id) {
-            // 没有设置部门：团队绩效视图不展示任何数据
-            setEvaluations([])
-            setPaginationData(null)
-            setLoading(false)
-            return
+            // 没有设置部门：只查询直属下级
+            params.manager_id = currentUser?.id.toString()
+          } else {
+            // 同时查询本部门和直属下级
+            params.department_id = currentUser.department_id.toString()
+            params.manager_id = currentUser?.id.toString()
           }
-          params.department_id = currentUser.department_id.toString()
 
-          // 允许按具体员工进一步筛选（仍限定在本部门内）
+          // 允许按具体员工进一步筛选
           if (employeeFilter && employeeFilter !== "all" && !/^department:/.test(employeeFilter)) {
             params.employee_id = employeeFilter
           }
         } else if (isManager) {
-          // 主管：团队 = 直属下属（可跨部门）
-          params.manager_id = currentUser?.id.toString()
+          // 主管：团队 = 自己所在部门 + 直属下级（可跨部门）
+          if (!currentUser?.department_id) {
+            // 没有设置部门：只查询直属下级
+            params.manager_id = currentUser?.id.toString()
+          } else {
+            // 同时查询本部门和直属下级
+            params.department_id = currentUser.department_id.toString()
+            params.manager_id = currentUser?.id.toString()
+          }
+
+          // 允许按具体员工进一步筛选
           if (employeeFilter && employeeFilter !== "all") {
             if (/^department:/.test(employeeFilter)) {
               params.department_id = employeeFilter.replace("department:", "")
@@ -414,13 +423,35 @@ export default function EvaluationsPage() {
   const handleDeleteInvitation = async (invitationId: number) => {
     if (!selectedEvaluation) return
 
+    // 当考核完成时，不允许删除邀请评分
+    if (selectedEvaluation.status === "completed") {
+      Alert("提示", "考核已完成，不能删除邀请评分")
+      return
+    }
+
     const confirmed = await Confirm("确认删除", "确定要删除这个邀请吗？此操作无法撤销。")
     if (!confirmed) return
 
     try {
+      // 检查删除的邀请是否是已完成的邀请
+      const deletedInvitation = invitations.find(inv => inv.id === invitationId)
+      const wasCompleted = deletedInvitation?.status === "completed"
+      
       await invitationApi.delete(invitationId)
       await fetchInvitations(selectedEvaluation.id)
-      toast.success("邀请删除成功")
+      
+      // 如果删除的是已完成的邀请，且评估处于pending_confirm状态，且启用了绩效规则
+      // 后端会自动重新计算HR评分，需要刷新评估和评分数据
+      if (wasCompleted && selectedEvaluation.status === "pending_confirm" && performanceRuleEnabled) {
+        // 刷新评估数据以获取重新计算后的HR评分和总分
+        const updatedEvaluation = await evaluationApi.getById(selectedEvaluation.id)
+        setSelectedEvaluation(updatedEvaluation.data)
+        // 刷新评分数据
+        await fetchEvaluationScores(selectedEvaluation.id)
+        toast.success("邀请删除成功，HR评分已重新计算")
+      } else {
+        toast.success("邀请删除成功")
+      }
     } catch (error) {
       console.error("删除邀请失败:", error)
       const errorMessage = getErrorMessage(error, "删除邀请失败，请重试")
@@ -1054,8 +1085,19 @@ export default function EvaluationsPage() {
 
     // HR审核阶段的特殊处理
     if (stage === "hr") {
-      // 如果启用了绩效规则，HR评分已经自动计算完成，直接确认即可
+      // 如果启用了绩效规则，检查是否有未完成的邀请评分
       if (performanceRuleEnabled) {
+        const hasPendingInvitations = invitations.some(
+          inv => inv.status === "pending" || inv.status === "accepted"
+        )
+        if (hasPendingInvitations) {
+          await Alert(
+            "HR审核",
+            "当前有邀请评分未完成，请等待所有邀请评分完成后再进行HR审核。系统将在所有邀请完成后自动计算HR评分。"
+          )
+          return
+        }
+        // 所有邀请都已完成，HR评分已自动计算完成，直接确认即可
         const result = await Confirm(
           "HR审核",
           "已启用绩效规则，HR评分已自动计算完成。确定要进入员工确认阶段吗？"
@@ -1368,8 +1410,30 @@ export default function EvaluationsPage() {
     }
   }
 
+  // 判断是否是自动创建的评分评论
+  const isAutoScoreComment = (comment: EvaluationComment): boolean => {
+    // 系统用户（user_id = 0）创建的评论是自动评论
+    if (comment.user_id === 0) {
+      return true
+    }
+    // 检查评论内容是否符合自动评论的格式
+    const content = comment.content || ""
+    const autoCommentPatterns = [
+      /^员工自评，总分/,
+      /^主管评分，总分/,
+      /^HR评分，总分/,
+      /^邀请评分（.+），总分/,
+    ]
+    return autoCommentPatterns.some(pattern => pattern.test(content))
+  }
+
   // 开始编辑评论
   const handleStartEditComment = (comment: EvaluationComment) => {
+    // 不允许编辑自动创建的评分评论
+    if (isAutoScoreComment(comment)) {
+      Alert("提示", "系统自动创建的评分评论不能编辑")
+      return
+    }
     setEditingCommentId(comment.id)
     setEditingCommentContent(comment.content)
     setEditingCommentPrivate(comment.is_private)
@@ -1409,6 +1473,15 @@ export default function EvaluationsPage() {
 
   // 删除评论
   const handleDeleteComment = async (commentId: number) => {
+    // 查找要删除的评论
+    const comment = comments.find(c => c.id === commentId)
+    if (!comment) return
+
+    // 不允许删除自动创建的评分评论
+    if (isAutoScoreComment(comment)) {
+      Alert("提示", "系统自动创建的评分评论不能删除")
+      return
+    }
     if (!selectedEvaluation) return
 
     const confirmed = await Confirm("确认删除", "确定要删除这条评论吗？此操作无法撤销。")
@@ -1566,12 +1639,27 @@ export default function EvaluationsPage() {
         )
       case "hr":
         // HR只能审核主管评估的考核
-        return evaluation.status === "manager_evaluated" && isHR
+        if (evaluation.status !== "manager_evaluated" || !isHR) {
+          return false
+        }
+        // 如果启用了绩效规则，检查是否有未完成的邀请评分
+        // 如果有未完成的邀请（pending或accepted状态），不显示"完成HR审核"按钮
+        // 等待所有邀请完成后再自动计算HR评分
+        if (performanceRuleEnabled) {
+          const hasPendingInvitations = invitations.some(
+            inv => inv.status === "pending" || inv.status === "accepted"
+          )
+          // 如果有未完成的邀请，不显示按钮（等待自动计算）
+          if (hasPendingInvitations) {
+            return false
+          }
+        }
+        return true
       case "invite":
         // HR可以邀请员工进行考核（自评完成后即可邀请，无需等待主管评估）
         // 被评估员工和被邀请人可以查看邀请评分结果
         if (["self_evaluated", "manager_evaluated", "pending_confirm", "completed"].includes(evaluation.status)) {
-          // HR可以邀请
+          // HR可以邀请（completed状态时不能创建新邀请，但可以查看）
           if (isHR) return true
           // 被评估员工可以查看自己评估的邀请
           if (evaluation.employee_id === currentUser.id) return true
@@ -2319,7 +2407,7 @@ export default function EvaluationsPage() {
                         <div className="bg-purple-50/80 dark:bg-purple-950/50 border border-purple-200 dark:border-purple-800 rounded-lg p-4">
                           <div className="flex items-center justify-between mb-3">
                             <h4 className="font-medium text-purple-900 dark:text-purple-100">🤝 邀请评分</h4>
-                            {isHR && (
+                            {isHR && selectedEvaluation?.status !== "completed" && (
                               <Dialog open={invitationDialogOpen} onOpenChange={setInvitationDialogOpen}>
                                 <DialogTrigger asChild>
                                   <Button variant="outline" size="sm">
@@ -2468,8 +2556,8 @@ export default function EvaluationsPage() {
                                           <RefreshCcw className="w-3 h-3" />
                                         </Button>
                                       )}
-                                      {/* 删除按钮 - 只有HR可以删除 */}
-                                      {isHR && (
+                                      {/* 删除按钮 - 只有HR可以删除，且考核未完成时才能删除 */}
+                                      {isHR && selectedEvaluation?.status !== "completed" && (
                                         <Button
                                           variant="ghost"
                                           size="sm"
@@ -3196,10 +3284,14 @@ export default function EvaluationsPage() {
                                 <div className="flex items-start justify-between">
                                   <div className="flex-1">
                                     <div className="flex items-center mb-2">
-                                      <span className="font-medium text-sm">{comment.user?.name || "未知用户"}</span>
-                                      <span className="text-xs text-muted-foreground ml-2">
-                                        {comment.user?.position}
+                                      <span className="font-medium text-sm">
+                                        {comment.user_id === 0 ? "系统" : comment.user?.name || "未知用户"}
                                       </span>
+                                      {comment.user_id !== 0 && (
+                                        <span className="text-xs text-muted-foreground ml-2">
+                                          {comment.user?.position}
+                                        </span>
+                                      )}
                                       <span className="text-xs text-muted-foreground/70 ml-2">
                                         {new Date(comment.created_at).toLocaleString()}
                                       </span>
@@ -3255,7 +3347,9 @@ export default function EvaluationsPage() {
                                     )}
                                   </div>
 
-                                  {editingCommentId !== comment.id && comment.user_id === currentUser?.id && (
+                                  {editingCommentId !== comment.id && 
+                                   comment.user_id === currentUser?.id && 
+                                   !isAutoScoreComment(comment) && (
                                     <div className="flex items-center space-x-1 ml-2">
                                       <Button variant="ghost" size="sm" onClick={() => handleStartEditComment(comment)}>
                                         <Edit2 className="w-3 h-3" />
