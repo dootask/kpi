@@ -131,7 +131,8 @@ func SetupRoutes(r *gin.RouterGroup) {
 
 			// 邀请评分管理（HR发起邀请）
 			evaluationRoutes.POST("/:id/invitations", handlers.RoleMiddleware("hr"), handlers.CreateInvitation)
-			evaluationRoutes.GET("/:id/invitations", handlers.RoleMiddleware("hr"), handlers.GetEvaluationInvitations)
+			// 获取邀请列表：HR可以查看所有，被评估员工和被邀请人可以查看相关邀请（权限检查在函数内部）
+			evaluationRoutes.GET("/:id/invitations", handlers.GetEvaluationInvitations)
 
 			// 异议处理
 			evaluationRoutes.POST("/:id/objection", handlers.SubmitObjection)                                      // 员工提交异议

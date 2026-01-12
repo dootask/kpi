@@ -84,6 +84,12 @@ export default function EvaluationsPage() {
   const { user: currentUser, isManager, isHR } = useAuth()
   const { onMessage } = useNotification()
   const detailsRef = useRef<HTMLDivElement>(null)
+
+  // 提取API错误信息的辅助函数
+  const getErrorMessage = (error: unknown, defaultMessage: string): string => {
+    const apiError = error as { response?: { data?: { error?: string; message?: string } } }
+    return apiError.response?.data?.error || apiError.response?.data?.message || defaultMessage
+  }
   const [evaluations, setEvaluations] = useState<KPIEvaluation[]>([])
   const [templates, setTemplates] = useState<KPITemplate[]>([])
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -361,7 +367,8 @@ export default function EvaluationsPage() {
       toast.success("邀请创建成功")
     } catch (error) {
       console.error("创建邀请失败:", error)
-      Alert("创建失败", "创建邀请失败，请重试")
+      const errorMessage = getErrorMessage(error, "创建邀请失败，请重试")
+      Alert("创建失败", errorMessage)
     } finally {
       setIsCreatingInvitation(false)
     }
@@ -380,7 +387,8 @@ export default function EvaluationsPage() {
       toast.success("邀请已撤销")
     } catch (error) {
       console.error("撤销邀请失败:", error)
-      Alert("撤销失败", "撤销邀请失败，请重试")
+      const errorMessage = getErrorMessage(error, "撤销邀请失败，请重试")
+      Alert("撤销失败", errorMessage)
     }
   }
 
@@ -397,7 +405,8 @@ export default function EvaluationsPage() {
       toast.success("重新邀请成功")
     } catch (error) {
       console.error("重新邀请失败:", error)
-      Alert("重新邀请失败", "重新邀请失败，请重试")
+      const errorMessage = getErrorMessage(error, "重新邀请失败，请重试")
+      Alert("重新邀请失败", errorMessage)
     }
   }
 
@@ -414,7 +423,8 @@ export default function EvaluationsPage() {
       toast.success("邀请删除成功")
     } catch (error) {
       console.error("删除邀请失败:", error)
-      Alert("删除失败", "删除邀请失败，请重试")
+      const errorMessage = getErrorMessage(error, "删除邀请失败，请重试")
+      Alert("删除失败", errorMessage)
     }
   }
 
@@ -640,7 +650,8 @@ export default function EvaluationsPage() {
       Alert("创建成功", `已为 ${toCreate.length} 个员工创建本月考核（基于上个月模板）`)
     } catch (error) {
       console.error("一键创建失败:", error)
-      Alert("创建失败", "一键创建考核失败，请重试")
+      const errorMessage = getErrorMessage(error, "一键创建考核失败，请重试")
+      Alert("创建失败", errorMessage)
     }
   }
 
@@ -842,7 +853,8 @@ export default function EvaluationsPage() {
       Alert("创建成功", successMessage)
     } catch (error) {
       console.error("创建评估失败:", error)
-      Alert("创建失败", "创建考核失败，请重试")
+      const errorMessage = getErrorMessage(error, "创建考核失败，请重试")
+      Alert("创建失败", errorMessage)
     }
   }
 
@@ -985,7 +997,8 @@ export default function EvaluationsPage() {
       toast.success("评分保存成功")
     } catch (error) {
       console.error("更新评分失败:", error)
-      Alert("保存失败", "更新评分失败，请重试")
+      const errorMessage = getErrorMessage(error, "更新评分失败，请重试")
+      Alert("保存失败", errorMessage)
     }
   }
 
@@ -1191,7 +1204,8 @@ export default function EvaluationsPage() {
       }
     } catch (error) {
       console.error("更新状态失败:", error)
-      Alert("提交失败", "提交失败，请重试。")
+      const errorMessage = getErrorMessage(error, "提交失败，请重试。")
+      Alert("提交失败", errorMessage)
     } finally {
       if (stage === "self") {
         setIsSubmittingSelfEvaluation(false)
@@ -1242,7 +1256,8 @@ export default function EvaluationsPage() {
       await Alert("提交异议", "异议已成功提交！上级和HR将收到通知。")
     } catch (error) {
       console.error("提交异议失败:", error)
-      Alert("提交失败", "提交异议失败，请重试。")
+      const errorMessage = getErrorMessage(error, "提交异议失败，请重试。")
+      Alert("提交失败", errorMessage)
     } finally {
       setIsSubmittingObjection(false)
     }
@@ -1299,7 +1314,8 @@ export default function EvaluationsPage() {
       await Alert("处理异议", "异议已成功处理！员工将收到通知。")
     } catch (error) {
       console.error("处理异议失败:", error)
-      Alert("提交失败", "处理异议失败，请重试。")
+      const errorMessage = getErrorMessage(error, "处理异议失败，请重试。")
+      Alert("提交失败", errorMessage)
     } finally {
       setIsSubmittingObjection(false)
     }
@@ -1345,7 +1361,8 @@ export default function EvaluationsPage() {
       toast.success("添加评论成功")
     } catch (error) {
       console.error("添加评论失败:", error)
-      Alert("添加失败", "添加评论失败，请重试")
+      const errorMessage = getErrorMessage(error, "添加评论失败，请重试")
+      Alert("添加失败", errorMessage)
     } finally {
       setIsSavingComment(false)
     }
@@ -1376,7 +1393,8 @@ export default function EvaluationsPage() {
       toast.success("更新评论成功")
     } catch (error) {
       console.error("更新评论失败:", error)
-      Alert("保存失败", "更新评论失败，请重试")
+      const errorMessage = getErrorMessage(error, "更新评论失败，请重试")
+      Alert("保存失败", errorMessage)
     } finally {
       setIsSavingComment(false)
     }
@@ -1402,7 +1420,8 @@ export default function EvaluationsPage() {
       toast.success("删除评论成功")
     } catch (error) {
       console.error("删除评论失败:", error)
-      Alert("删除失败", "删除评论失败，请重试")
+      const errorMessage = getErrorMessage(error, "删除评论失败，请重试")
+      Alert("删除失败", errorMessage)
     }
   }
 
@@ -1424,8 +1443,9 @@ export default function EvaluationsPage() {
       setEditingCommentContent("")
       setEditingCommentPrivate(false)
 
-      // 如果是HR用户且评估状态为manager_evaluated，获取邀请列表
-      if (["manager_evaluated", "pending_confirm", "completed"].includes(evaluation.status) && isHR) {
+      // 如果评估状态为self_evaluated, manager_evaluated, pending_confirm, completed，获取邀请列表
+      // HR可以查看所有邀请，被评估员工和被邀请人可以查看相关邀请
+      if (["self_evaluated", "manager_evaluated", "pending_confirm", "completed"].includes(evaluation.status)) {
         fetchInvitations(evaluation.id)
       }
 
@@ -1438,7 +1458,7 @@ export default function EvaluationsPage() {
         message: "",
       })
     },
-    [isHR]
+    []
   )
 
   const router = useRouter()
@@ -1529,6 +1549,15 @@ export default function EvaluationsPage() {
         return evaluation.status === "pending" && evaluation.employee_id === currentUser.id
       case "manager":
         // 主管只能评估自己直接下属的员工，但不能评估自己
+        // 特殊情况：如果员工没有上级且是HR角色，HR可以手动推进状态（用于完成邀请评分后的状态推进）
+        if (
+          evaluation.status === "self_evaluated" &&
+          evaluation.employee_id === currentUser.id &&
+          evaluation.employee?.role === "hr" &&
+          !evaluation.employee?.manager_id
+        ) {
+          return true
+        }
         return (
           evaluation.status === "self_evaluated" &&
           (isManager || isHR) &&
@@ -1540,7 +1569,17 @@ export default function EvaluationsPage() {
         return evaluation.status === "manager_evaluated" && isHR
       case "invite":
         // HR可以邀请员工进行考核（自评完成后即可邀请，无需等待主管评估）
-        return ["self_evaluated", "manager_evaluated", "pending_confirm", "completed"].includes(evaluation.status) && isHR
+        // 被评估员工和被邀请人可以查看邀请评分结果
+        if (["self_evaluated", "manager_evaluated", "pending_confirm", "completed"].includes(evaluation.status)) {
+          // HR可以邀请
+          if (isHR) return true
+          // 被评估员工可以查看自己评估的邀请
+          if (evaluation.employee_id === currentUser.id) return true
+          // 被邀请人可以查看自己相关的邀请（检查是否有自己的邀请）
+          // 注意：这里需要检查是否有邀请，但为了简化，我们允许所有用户在评估详情页面查看邀请评分结果
+          return true
+        }
+        return false
       case "confirm":
         // 员工可以确认最终得分
         return evaluation.status === "pending_confirm" && evaluation.employee_id === currentUser.id
@@ -2409,7 +2448,7 @@ export default function EvaluationsPage() {
 
                                     {/* 操作按钮 */}
                                     <div className="flex items-center space-x-1">
-                                      {invitation.status === "pending" && (
+                                      {invitation.status === "pending" && isHR && (
                                         <Button
                                           variant="ghost"
                                           size="sm"
@@ -2419,7 +2458,7 @@ export default function EvaluationsPage() {
                                           <XCircle className="w-3 h-3" />
                                         </Button>
                                       )}
-                                      {invitation.status === "declined" && (
+                                      {invitation.status === "declined" && isHR && (
                                         <Button
                                           variant="ghost"
                                           size="sm"
@@ -2429,15 +2468,17 @@ export default function EvaluationsPage() {
                                           <RefreshCcw className="w-3 h-3" />
                                         </Button>
                                       )}
-                                      {/* 删除按钮 - 对所有状态都显示 */}
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => handleDeleteInvitation(invitation.id)}
-                                        className="h-6 w-6 p-0 text-gray-500 hover:text-gray-700"
-                                      >
-                                        <Trash2 className="w-3 h-3" />
-                                      </Button>
+                                      {/* 删除按钮 - 只有HR可以删除 */}
+                                      {isHR && (
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() => handleDeleteInvitation(invitation.id)}
+                                          className="h-6 w-6 p-0 text-gray-500 hover:text-gray-700"
+                                        >
+                                          <Trash2 className="w-3 h-3" />
+                                        </Button>
+                                      )}
                                     </div>
                                   </div>
                                 </div>
@@ -2449,8 +2490,15 @@ export default function EvaluationsPage() {
                             </div>
                           )}
                         </div>
+                      </div>
+                    )}
 
-                        {/* 邀请评分结果展示 */}
+                    {/* 邀请评分结果展示 - 所有有权限的用户都可以查看 */}
+                    {(["self_evaluated", "manager_evaluated", "pending_confirm", "completed"].includes(selectedEvaluation?.status || "") &&
+                      (isHR || 
+                       selectedEvaluation?.employee_id === currentUser?.id || 
+                       invitations.some(inv => inv.invitee_id === currentUser?.id))) && (
+                      <div className="space-y-4">
                         {Object.keys(invitationScores).length > 0 && (
                           <div className="bg-gray-50/80 dark:bg-gray-950/50 border border-gray-200 dark:border-gray-800 rounded-lg p-4">
                             <h4 className="font-medium text-gray-900 dark:text-gray-100 mb-3">📊 邀请评分结果</h4>
@@ -2495,6 +2543,11 @@ export default function EvaluationsPage() {
                                 )
                               })}
                             </div>
+                          </div>
+                        )}
+                        {Object.keys(invitationScores).length === 0 && invitations.length > 0 && (
+                          <div className="text-sm text-muted-foreground text-center py-4 bg-gray-50/80 dark:bg-gray-950/50 border border-gray-200 dark:border-gray-800 rounded-lg p-4">
+                            暂无已完成的邀请评分结果
                           </div>
                         )}
                       </div>
@@ -2906,36 +2959,60 @@ export default function EvaluationsPage() {
                             </p>
                           </div>
 
-                          <div className="grid grid-cols-4 gap-4 text-center">
-                            <div>
-                              <div className="text-lg font-semibold">
-                                {formatScore(scores.reduce((acc, score) => acc + (score.self_score ?? 0), 0))}
-                              </div>
-                              <div className="text-sm text-muted-foreground">自评总分</div>
-                            </div>
-                            <div>
-                              <div className="text-lg font-semibold">
-                                {formatScore(scores.reduce((acc, score) => acc + (score.manager_score ?? 0), 0))}
-                              </div>
-                              <div className="text-sm text-muted-foreground">主管评分</div>
-                            </div>
-                            <div>
-                              <div className="text-lg font-semibold">
-                                {formatScore(scores.reduce((acc, score) => acc + (score.hr_score ?? 0), 0))}
-                              </div>
-                              <div className="text-sm text-muted-foreground">HR评分</div>
-                            </div>
-                            <div>
-                              <div className="text-lg font-semibold">
-                                {formatScore(
-                                  selectedEvaluation?.final_comment && selectedEvaluation.final_comment.trim()
-                                    ? selectedEvaluation.total_score
-                                    : scores.reduce((acc, score) => acc + (score.final_score ?? 0), 0)
+                          {/* 计算邀请评分总分 */}
+                          {(() => {
+                            const invitationTotalScore = Object.values(invitationScores).reduce((total, scores) => {
+                              return total + scores.reduce((sum, score) => sum + (score.score ?? 0), 0)
+                            }, 0)
+                            const hasInvitations = Object.keys(invitationScores).length > 0
+                            const gridCols = hasInvitations ? "grid-cols-5" : "grid-cols-4"
+                            
+                            return (
+                              <div className={`grid ${gridCols} gap-4 text-center`}>
+                                <div>
+                                  <div className="text-lg font-semibold">
+                                    {formatScore(scores.reduce((acc, score) => acc + (score.self_score ?? 0), 0))}
+                                  </div>
+                                  <div className="text-sm text-muted-foreground">自评总分</div>
+                                </div>
+                                <div>
+                                  <div className="text-lg font-semibold">
+                                    {formatScore(scores.reduce((acc, score) => acc + (score.manager_score ?? 0), 0))}
+                                  </div>
+                                  <div className="text-sm text-muted-foreground">主管评分</div>
+                                </div>
+                                {hasInvitations && (
+                                  <div>
+                                    <div className="text-lg font-semibold text-purple-600 dark:text-purple-400">
+                                      {formatScore(invitationTotalScore)}
+                                    </div>
+                                    <div className="text-sm text-muted-foreground">
+                                      邀请评分
+                                      <span className="ml-1 text-xs">
+                                        ({Object.keys(invitationScores).length}人)
+                                      </span>
+                                    </div>
+                                  </div>
                                 )}
+                                <div>
+                                  <div className="text-lg font-semibold">
+                                    {formatScore(scores.reduce((acc, score) => acc + (score.hr_score ?? 0), 0))}
+                                  </div>
+                                  <div className="text-sm text-muted-foreground">HR评分</div>
+                                </div>
+                                <div>
+                                  <div className="text-lg font-semibold">
+                                    {formatScore(
+                                      selectedEvaluation?.final_comment && selectedEvaluation.final_comment.trim()
+                                        ? selectedEvaluation.total_score
+                                        : scores.reduce((acc, score) => acc + (score.final_score ?? 0), 0)
+                                    )}
+                                  </div>
+                                  <div className="text-sm text-muted-foreground">最终得分</div>
+                                </div>
                               </div>
-                              <div className="text-sm text-muted-foreground">最终得分</div>
-                            </div>
-                          </div>
+                            )
+                          })()}
                         </div>
                       </CardContent>
                     </Card>

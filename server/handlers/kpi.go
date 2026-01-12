@@ -480,27 +480,15 @@ func UpdateEvaluation(c *gin.Context) {
 	}
 
 	// 特殊处理：如果状态是self_evaluated，检查员工是否有主管
+	// 注意：由于在UpdateSelfScore中已经限制了所有员工（包括HR）必须有直属上级才能开始自评
+	// 所以这里理论上不应该出现没有主管的情况，但为了数据一致性，仍然进行检查
 	if updateData.Status == "self_evaluated" {
 		// 检查员工是否有直属主管
 		if evaluation.Employee.ManagerID == nil {
-			// 如果没有主管，直接将状态改为manager_evaluated
-			updateData.Status = "manager_evaluated"
-
-			// 自动填入主管评分：将自评分数复制到主管评分
-			var scores []models.KPIScore
-			if err := models.DB.Where("evaluation_id = ?", evaluation.ID).Find(&scores).Error; err == nil {
-				for _, score := range scores {
-					if score.SelfScore != nil {
-						// 将自评分数复制到主管评分
-						comment := "（自评分数）"
-						models.DB.Model(&score).Updates(map[string]interface{}{
-							"manager_score":   *score.SelfScore,
-							"manager_comment": comment,
-							"manager_auto":    true,
-						})
-					}
-				}
-			}
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "暂无直属上级，请联系HR",
+			})
+			return
 		}
 	}
 
@@ -876,7 +864,7 @@ func UpdateSelfScore(c *gin.Context) {
 	}
 
 	var score models.KPIScore
-	result := models.DB.First(&score, scoreId)
+	result := models.DB.Preload("Evaluation.Employee").First(&score, scoreId)
 	if result.Error != nil {
 		c.JSON(http.StatusNotFound, gin.H{
 			"error": "评分记录不存在",
@@ -895,6 +883,18 @@ func UpdateSelfScore(c *gin.Context) {
 			"message": err.Error(),
 		})
 		return
+	}
+
+	// 检查是否是第一次保存自评分数（开始自评时）
+	// 如果之前没有自评分数，且现在要保存自评分数，则检查是否有直属上级
+	if score.SelfScore == nil && updateData.SelfScore != nil {
+		// 检查被评估员工是否有直属上级（所有角色都需要检查）
+		if score.Evaluation.Employee.ManagerID == nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "暂无直属上级，请联系HR",
+			})
+			return
+		}
 	}
 
 	result = models.DB.Model(&score).Updates(map[string]interface{}{

@@ -192,15 +192,10 @@ func GetEvaluationInvitations(c *gin.Context) {
 	}
 	userID := currentUserID.(uint)
 
-	// 验证当前用户是否是HR
+	// 验证当前用户
 	var currentUser models.Employee
 	if err := models.DB.First(&currentUser, userID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
-		return
-	}
-
-	if currentUser.Role != "hr" {
-		c.JSON(http.StatusForbidden, gin.H{"error": "只有HR可以查看邀请列表"})
 		return
 	}
 
@@ -212,9 +207,22 @@ func GetEvaluationInvitations(c *gin.Context) {
 		return
 	}
 
+	// 权限检查：HR可以查看所有邀请，被邀请人可以查看自己相关的邀请，被评估员工可以查看自己的评估的邀请
 	var invitations []models.EvaluationInvitation
-	if err := models.DB.Preload("Invitee").Preload("Inviter").
-		Where("evaluation_id = ?", evalID).Find(&invitations).Error; err != nil {
+	query := models.DB.Preload("Invitee").Preload("Inviter")
+
+	if currentUser.Role == "hr" {
+		// HR可以查看所有邀请
+		query = query.Where("evaluation_id = ?", evalID)
+	} else if evaluation.EmployeeID == userID {
+		// 被评估员工可以查看自己评估的所有邀请
+		query = query.Where("evaluation_id = ?", evalID)
+	} else {
+		// 被邀请人只能查看自己相关的邀请
+		query = query.Where("evaluation_id = ? AND invitee_id = ?", evalID, userID)
+	}
+
+	if err := query.Find(&invitations).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取邀请列表失败"})
 		return
 	}
@@ -487,19 +495,24 @@ func GetInvitationScores(c *gin.Context) {
 
 	// 验证邀请是否存在
 	var invitation models.EvaluationInvitation
-	if err := models.DB.First(&invitation, inviteID).Error; err != nil {
+	if err := models.DB.Preload("Evaluation").First(&invitation, inviteID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "邀请不存在"})
 		return
 	}
 
-	// 验证权限：只有被邀请人或HR可以查看
+	// 验证权限：被邀请人、被评估员工或HR可以查看
 	var currentUser models.Employee
 	if err := models.DB.First(&currentUser, userID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
 		return
 	}
 
-	if invitation.InviteeID != userID && currentUser.Role != "hr" {
+	// 检查权限：被邀请人、被评估员工或HR可以查看
+	canView := invitation.InviteeID == userID || // 被邀请人
+		currentUser.Role == "hr" || // HR
+		invitation.Evaluation.EmployeeID == userID // 被评估员工
+
+	if !canView {
 		c.JSON(http.StatusForbidden, gin.H{"error": "无权限查看此邀请的评分"})
 		return
 	}

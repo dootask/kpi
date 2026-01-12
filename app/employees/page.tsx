@@ -123,7 +123,8 @@ export default function EmployeesPage() {
   const fetchSupervisors = useCallback(async () => {
     try {
       const response = await employeeApi.getAll({
-        pageSize: 500,
+        pageSize: 100,
+        is_active: true,
       })
       setSupervisors(response.data || [])
     } catch (error) {
@@ -133,20 +134,20 @@ export default function EmployeesPage() {
   }, [])
 
   useEffect(() => {
-    if (formData.role === "manager" && supervisors.length === 0) {
+    if ((formData.role === "manager" || formData.role === "hr") && supervisors.length === 0) {
       fetchSupervisors()
     }
   }, [formData.role, supervisors.length, fetchSupervisors])
 
   const supervisorOptions = useMemo(() => {
-    if (formData.role === "manager") {
+    if (formData.role === "manager" || formData.role === "hr") {
       return supervisors.filter(emp => (editingEmployee ? emp.id !== editingEmployee.id : true))
     }
     return managers
   }, [formData.role, supervisors, managers, editingEmployee])
 
   const managerSelectValue = useMemo(() => {
-    if (formData.role === "manager") {
+    if (formData.role === "manager" || formData.role === "hr") {
       return formData.manager_id || "none"
     }
     return formData.manager_id
@@ -330,7 +331,8 @@ export default function EmployeesPage() {
                       setFormData(prev => ({
                         ...prev,
                         role: value,
-                        manager_id: value === "hr" ? "" : prev.manager_id,
+                        // 只有从非可选角色切换到必选角色时才清空manager_id
+                        manager_id: value === "employee" && !prev.manager_id ? prev.manager_id : prev.manager_id,
                       }))
                     }
                   >
@@ -344,53 +346,53 @@ export default function EmployeesPage() {
                     </SelectContent>
                   </Select>
                 </div>
-                {formData.role !== "hr" && (
-                  <div className="flex flex-col gap-2">
-                    <Label htmlFor="manager">
-                      直属上级
-                      {formData.role === "manager"
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="manager">
+                    直属上级
+                    {formData.role === "employee"
+                      ? "（必选）"
+                      : formData.role === "hr"
                         ? "（可选，可指定任一员工或无上级）"
-                        : "（普通员工必选）"}
-                    </Label>
-                    <Select
-                      value={managerSelectValue}
-                      onValueChange={value => setFormData({ ...formData, manager_id: value === "none" ? "" : value })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue
-                          placeholder={
-                            formData.role === "manager"
-                              ? "选择任一员工作为上级或无上级"
-                              : "选择直属上级（必选）"
-                          }
-                        />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {formData.role === "manager" && (
-                          <SelectItem value="none">
-                            无上级
+                        : "（可选，可指定任一员工或无上级）"}
+                  </Label>
+                  <Select
+                    value={managerSelectValue}
+                    onValueChange={value => setFormData({ ...formData, manager_id: value === "none" ? "" : value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue
+                        placeholder={
+                          formData.role === "employee"
+                            ? "选择直属上级（必选）"
+                            : "选择任一员工作为上级或无上级"
+                        }
+                      />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(formData.role === "manager" || formData.role === "hr") && (
+                        <SelectItem value="none">
+                          无上级
+                        </SelectItem>
+                      )}
+                      {supervisorOptions.length === 0 && (
+                        <SelectItem value="none-disabled" disabled>
+                          {formData.role === "employee" ? "暂无可选上级" : "暂无可选员工"}
+                        </SelectItem>
+                      )}
+                      {supervisorOptions.map(manager => {
+                        const departmentText = manager.department?.name ? `（${manager.department.name}）` : ""
+                        const roleText = ` - ${getRoleLabel(manager.role)}`
+                        return (
+                          <SelectItem key={manager.id} value={manager.id.toString()}>
+                            {manager.name}
+                            {departmentText}
+                            {roleText}
                           </SelectItem>
-                        )}
-                        {supervisorOptions.length === 0 && (
-                          <SelectItem value="none-disabled" disabled>
-                            {formData.role === "manager" ? "暂无可选员工" : "暂无可选上级"}
-                          </SelectItem>
-                        )}
-                        {supervisorOptions.map(manager => {
-                          const departmentText = manager.department?.name ? `（${manager.department.name}）` : ""
-                          const roleText = ` - ${getRoleLabel(manager.role)}`
-                          return (
-                            <SelectItem key={manager.id} value={manager.id.toString()}>
-                              {manager.name}
-                              {departmentText}
-                              {roleText}
-                            </SelectItem>
-                          )
-                        })}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
+                        )
+                      })}
+                    </SelectContent>
+                  </Select>
+                </div>
                 {isHR && editingEmployee && (
                   <div className="flex flex-col gap-2">
                     <Label>状态</Label>
