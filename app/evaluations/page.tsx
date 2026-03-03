@@ -179,6 +179,15 @@ export default function EvaluationsPage() {
     quarter: Math.floor((lastMonthData.month - 1) / 3) + 1,
   })
 
+  // 一键创建考核对话框状态
+  const [quickCreateDialogOpen, setQuickCreateDialogOpen] = useState(false)
+  const [quickCreateSourceMonth, setQuickCreateSourceMonth] = useState<string>("") // 源月份（基于哪个月的模板）
+  const [quickCreateTargetMonth, setQuickCreateTargetMonth] = useState<string>("") // 目标月份（创建哪个月的考核）
+  const [quickCreateAvailableMonths, setQuickCreateAvailableMonths] = useState<
+    Array<{ year: number; month: number; label: string }>
+  >([])
+  const [quickCreateLoading, setQuickCreateLoading] = useState(false)
+
   // 获取评估列表
   const fetchEvaluations = useCallback(async () => {
     try {
@@ -565,33 +574,88 @@ export default function EvaluationsPage() {
     resetPagination()
   }
 
-  // 一键创建：拷贝上个月的绩效模板
-  const handleQuickCreate = async () => {
+  // 打开一键创建考核对话框
+  const handleQuickCreateOpen = async () => {
     try {
-      // 计算上个月的年月
+      // 获取过去12个月有考核记录的月份
       const now = new Date()
-      const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-      const lastMonthYear = lastMonth.getFullYear()
-      const lastMonthMonth = lastMonth.getMonth() + 1
+      const monthsWithEvaluations: Array<{ year: number; month: number; label: string }> = []
 
-      // 获取上个月的考核记录
-      const response = await evaluationApi.getAll({
-        period: "monthly",
-        year: lastMonthYear.toString(),
-        month: lastMonthMonth.toString(),
-        pageSize: 1000, // 获取所有记录
+      // 并行查询过去12个月的考核记录
+      const promises = []
+      for (let i = 1; i <= 12; i++) {
+        const targetDate = new Date(now.getFullYear(), now.getMonth() - i, 1)
+        const year = targetDate.getFullYear()
+        const month = targetDate.getMonth() + 1
+        promises.push(
+          evaluationApi
+            .getAll({
+              period: "monthly",
+              year: year.toString(),
+              month: month.toString(),
+              pageSize: 1, // 只需要判断是否有记录
+            })
+            .then(response => ({ year, month, hasData: (response.data?.length ?? 0) > 0 }))
+        )
+      }
+
+      const results = await Promise.all(promises)
+
+      results.forEach(({ year, month, hasData }) => {
+        if (hasData) {
+          monthsWithEvaluations.push({
+            year,
+            month,
+            label: `${year}年${month}月`,
+          })
+        }
       })
 
-      const lastMonthEvaluations = response.data || []
+      if (monthsWithEvaluations.length === 0) {
+        Alert("提示", "没有找到任何月份有考核记录，无法一键创建")
+        return
+      }
 
-      if (lastMonthEvaluations.length === 0) {
-        Alert("提示", "上个月没有考核记录，无法一键创建")
+      // 设置默认选择：源月份默认选最近有记录的月份，目标月份默认选上个月
+      const defaultSource = monthsWithEvaluations[0] // 最近有记录的月份
+      const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+      const defaultTarget = { year: lastMonth.getFullYear(), month: lastMonth.getMonth() + 1 }
+
+      setQuickCreateAvailableMonths(monthsWithEvaluations)
+      setQuickCreateSourceMonth(`${defaultSource.year}-${defaultSource.month}`)
+      setQuickCreateTargetMonth(`${defaultTarget.year}-${defaultTarget.month}`)
+      setQuickCreateDialogOpen(true)
+    } catch (error) {
+      console.error("获取月份列表失败:", error)
+      Alert("错误", "获取月份列表失败，请重试")
+    }
+  }
+
+  // 确认一键创建考核
+  const handleQuickCreateConfirm = async () => {
+    try {
+      const [sourceYear, sourceMonth] = quickCreateSourceMonth.split("-").map(Number)
+      const [targetYear, targetMonth] = quickCreateTargetMonth.split("-").map(Number)
+
+      // 获取源月份的考核记录
+      setQuickCreateLoading(true)
+      const response = await evaluationApi.getAll({
+        period: "monthly",
+        year: sourceYear.toString(),
+        month: sourceMonth.toString(),
+        pageSize: 1000,
+      })
+
+      const sourceEvaluations = response.data || []
+
+      if (sourceEvaluations.length === 0) {
+        Alert("提示", `${sourceYear}年${sourceMonth}月没有考核记录，无法创建`)
         return
       }
 
       // 按模板和员工分组，获取唯一的模板和员工组合（排除已离职员工）
       const templateEmployeeMap = new Map<string, Set<string>>()
-      lastMonthEvaluations.forEach(evaluation => {
+      sourceEvaluations.forEach(evaluation => {
         if (evaluation.template_id && evaluation.employee_id && evaluation.employee?.is_active !== false) {
           const templateKey = evaluation.template_id.toString()
           if (!templateEmployeeMap.has(templateKey)) {
@@ -602,27 +666,23 @@ export default function EvaluationsPage() {
       })
 
       if (templateEmployeeMap.size === 0) {
-        Alert("提示", "上个月没有有效的考核记录（已离职员工已排除），无法一键创建")
+        Alert("提示", `${sourceYear}年${sourceMonth}月没有有效的考核记录（已离职员工已排除），无法创建`)
         return
       }
 
-      // 计算当前月份
-      const currentYear = now.getFullYear()
-      const currentMonth = now.getMonth() + 1
-
-      // 获取当前月的考核记录，用于检查是否已存在
-      const currentMonthResponse = await evaluationApi.getAll({
+      // 获取目标月份的考核记录，用于检查是否已存在
+      const targetMonthResponse = await evaluationApi.getAll({
         period: "monthly",
-        year: currentYear.toString(),
-        month: currentMonth.toString(),
-        pageSize: 1000, // 获取所有记录
+        year: targetYear.toString(),
+        month: targetMonth.toString(),
+        pageSize: 1000,
       })
 
-      const currentMonthEvaluations = currentMonthResponse.data || []
-      
-      // 构建当前月已存在的考核记录集合（格式：templateId-employeeId）
+      const targetEvaluations = targetMonthResponse.data || []
+
+      // 构建目标月已存在的考核记录集合（格式：templateId-employeeId）
       const existingEvaluations = new Set<string>()
-      currentMonthEvaluations.forEach(evaluation => {
+      targetEvaluations.forEach(evaluation => {
         if (evaluation.template_id && evaluation.employee_id) {
           const key = `${evaluation.template_id}-${evaluation.employee_id}`
           existingEvaluations.add(key)
@@ -641,17 +701,7 @@ export default function EvaluationsPage() {
       })
 
       if (toCreate.length === 0) {
-        Alert("提示", "本月所有员工的考核记录已存在，无需创建")
-        return
-      }
-
-      // 确认对话框
-      const confirmed = await Confirm(
-        "一键创建考核",
-        `将基于上个月（${lastMonthYear}年${lastMonthMonth}月）的考核模板，为 ${toCreate.length} 个员工创建本月（${currentYear}年${currentMonth}月）的考核。\n\n注意：已存在的考核记录将被跳过。是否继续？`
-      )
-
-      if (!confirmed) {
+        Alert("提示", `${targetYear}年${targetMonth}月所有员工的考核记录已存在，无需创建`)
         return
       }
 
@@ -664,8 +714,8 @@ export default function EvaluationsPage() {
             employee_id: parseInt(employeeId),
             template_id: parseInt(templateId),
             period: "monthly",
-            year: currentYear,
-            month: currentMonth,
+            year: targetYear,
+            month: targetMonth,
             status: "pending",
             total_score: 0,
             final_comment: "",
@@ -677,12 +727,18 @@ export default function EvaluationsPage() {
 
       await Promise.all(promises)
 
+      setQuickCreateDialogOpen(false)
       fetchEvaluations()
-      Alert("创建成功", `已为 ${toCreate.length} 个员工创建本月考核（基于上个月模板）`)
+      Alert(
+        "创建成功",
+        `已为 ${toCreate.length} 个员工创建 ${targetYear}年${targetMonth}月考核（基于 ${sourceYear}年${sourceMonth}月模板）`
+      )
     } catch (error) {
       console.error("一键创建失败:", error)
       const errorMessage = getErrorMessage(error, "一键创建考核失败，请重试")
       Alert("创建失败", errorMessage)
+    } finally {
+      setQuickCreateLoading(false)
     }
   }
 
@@ -1858,12 +1914,80 @@ export default function EvaluationsPage() {
             </Dialog>
             <Button
               variant="outline"
-              onClick={handleQuickCreate}
+              onClick={handleQuickCreateOpen}
               className="w-full sm:w-auto"
             >
               <Zap className="w-4 h-4 mr-2" />
               一键创建
             </Button>
+            {/* 一键创建考核对话框 */}
+            <Dialog open={quickCreateDialogOpen} onOpenChange={setQuickCreateDialogOpen}>
+              <DialogContent className="sm:max-w-[500px]">
+                <DialogHeader>
+                  <DialogTitle>一键创建考核</DialogTitle>
+                </DialogHeader>
+                <div className="grid gap-4 py-4">
+                  <div className="grid gap-2">
+                    <Label>基于哪个月的考核模板？</Label>
+                    <Select
+                      value={quickCreateSourceMonth}
+                      onValueChange={setQuickCreateSourceMonth}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="选择源月份" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {quickCreateAvailableMonths.map(m => (
+                          <SelectItem key={`${m.year}-${m.month}`} value={`${m.year}-${m.month}`}>
+                            {m.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">将使用该月份的考核模板和员工名单</p>
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>创建哪个月的考核？</Label>
+                    <Select
+                      value={quickCreateTargetMonth}
+                      onValueChange={setQuickCreateTargetMonth}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="选择目标月份" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {quickCreateAvailableMonths.length > 0 && (
+                          <>
+                            {/* 生成未来2个月和过去12个月的选项 */}
+                            {Array.from({ length: 14 }, (_, i) => {
+                              const now = new Date()
+                              const targetDate = new Date(now.getFullYear(), now.getMonth() - 12 + i + 1, 1)
+                              const year = targetDate.getFullYear()
+                              const month = targetDate.getMonth() + 1
+                              const label = `${year}年${month}月`
+                              return (
+                                <SelectItem key={`${year}-${month}`} value={`${year}-${month}`}>
+                                  {label}
+                                </SelectItem>
+                              )
+                            })}
+                          </>
+                        )}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">将创建该月份的考核记录</p>
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setQuickCreateDialogOpen(false)}>
+                    取消
+                  </Button>
+                  <Button onClick={handleQuickCreateConfirm} disabled={quickCreateLoading}>
+                    {quickCreateLoading ? "创建中..." : "创建"}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           </div>
         )}
       </div>
