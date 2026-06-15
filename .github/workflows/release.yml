@@ -52,7 +52,7 @@ jobs:
       - name: Create dootask-plugin tar.gz package
         run: |
           cd dootask-plugin
-          mv 0.1.0 ${{ github.ref_name }}
+          mv version "${{ github.ref_name }}"
           tar -czf ../dootask-plugin.tar.gz .
           cd ..
           echo "Package created: dootask-plugin.tar.gz"
