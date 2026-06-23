@@ -26,15 +26,15 @@ last_verified: v1.7.90
 # KPI 绩效考核入口
 
 ## 路径
-KPI 由独立插件 `community_kuaifan_kpi` 提供，安装后在应用中心注册一个菜单项：
+KPI 由独立插件（应用市场 app id `kpi`）提供，安装后在应用中心注册一个菜单项：
 
 - 桌面端：左侧栏「应用」→「绩效考核」（对应 URL `apps/kpi`）
 - 移动端：底部 Tabbar「应用」→「绩效考核」
 - URL 上会自动附带 `theme` 参数，用于主题（亮 / 暗）同步
 
 ## 加载方式
-- 菜单项类型 `url_type: iframe`，在 DooTask 主框架内嵌打开
-- `immersive: true`：进入后会全屏沉浸展示，左侧主导航被收起
+- 以 iframe 形式在 DooTask 主框架内嵌打开
+- 沉浸式展示：进入后全屏显示、左侧主导航被收起
 - 同一个入口对所有角色可见，进入后页面根据当前用户的 KPI 角色（employee / manager / hr）展示对应功能
 
 ## 权限要求

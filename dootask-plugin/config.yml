@@ -10,3 +10,12 @@ tags:
 author: DooTask
 website: https://www.dootask.com
 github: https://github.com/dootask/kpi
+
+# AI 助手知识库：随包发布，安装后并入产品内 AI 助手检索
+knowledge_base: ./ai-kb
+
+# 应用指令接口：声明 OpenAPI 规范，支持 doo app call kpi <指令>
+openapi:
+  file: ./openapi.yaml
+  service: kpi
+  port: 8080

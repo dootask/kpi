@@ -1,0 +1,1332 @@
+openapi: 3.0.3
+info:
+  title: KPI API
+  version: 1.0.0
+  description: |
+    DooTask KPI 绩效考核插件后端 API。
+
+    说明：
+    - 所有路径以 `/api/` 开头（Gin 在 `/api` 下注册，nginx 将 `/apps/kpi/api` 反代到 `kpi:8080/api`）。
+    - 鉴权请求头（Token、X-Doo-User-Id、Authorization 等）由 doo app call 自动注入，无需在指令中传递，故规范中不声明这些 header。
+    - 通过 `doo app call kpi <operationId>` 调用；query/path/扁平请求体字段会成为指令参数。
+    - 内部回调（系统 hook、登录、SSE 流、文件下载、备份/恢复等）已用 `x-doo-cli: false` 隐藏。
+
+tags:
+  - name: auth
+    description: 认证与当前用户
+  - name: settings
+    description: 系统设置
+  - name: departments
+    description: 部门管理
+  - name: employees
+    description: 员工管理
+  - name: templates
+    description: KPI 模板与考核项目
+  - name: rules
+    description: 绩效评分规则
+  - name: evaluations
+    description: KPI 评估
+  - name: scores
+    description: KPI 评分
+  - name: comments
+    description: 评估评论
+  - name: invitations
+    description: 邀请评分
+  - name: objections
+    description: 异议处理
+  - name: statistics
+    description: 统计分析
+  - name: export
+    description: 导出
+  - name: backup
+    description: 数据备份（内部）
+  - name: events
+    description: SSE 事件流（内部）
+  - name: hooks
+    description: 系统回调（内部）
+
+paths:
+  /api/health:
+    get:
+      operationId: health
+      summary: 健康检查
+      tags: [auth]
+      x-doo-cli: false
+      responses:
+        '200':
+          description: 服务正常
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                  message: { type: string }
+
+  /api/hooks/user/onboard:
+    post:
+      operationId: hookUserOnboard
+      summary: 用户入职回调（内部）
+      tags: [hooks]
+      x-doo-cli: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserEventRequest'
+      responses:
+        '200':
+          description: 处理结果
+
+  /api/hooks/user/offboard:
+    post:
+      operationId: hookUserOffboard
+      summary: 用户离职回调（内部）
+      tags: [hooks]
+      x-doo-cli: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserEventRequest'
+      responses:
+        '200':
+          description: 处理结果
+
+  /api/auth/register:
+    post:
+      operationId: register
+      summary: 用户注册
+      tags: [auth]
+      x-doo-cli: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, password, department_id]
+              properties:
+                name: { type: string }
+                email: { type: string, format: email }
+                password: { type: string, minLength: 6 }
+                position: { type: string }
+                department_id: { type: integer }
+      responses:
+        '201':
+          description: 注册成功
+
+  /api/auth/login:
+    post:
+      operationId: login
+      summary: 邮箱密码登录（内部）
+      tags: [auth]
+      x-doo-cli: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+      responses:
+        '200':
+          description: 登录成功
+
+  /api/auth/login-by-dootask-token:
+    post:
+      operationId: loginByDooTaskToken
+      summary: DooTask Token 登录（内部）
+      tags: [auth]
+      x-doo-cli: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, token]
+              properties:
+                email: { type: string, format: email }
+                token: { type: string }
+      responses:
+        '200':
+          description: 登录成功
+
+  /api/auth/refresh:
+    post:
+      operationId: refreshToken
+      summary: 刷新 Token（内部）
+      tags: [auth]
+      x-doo-cli: false
+      responses:
+        '200':
+          description: 新 Token
+
+  /api/auth/departments:
+    get:
+      operationId: getAuthDepartments
+      summary: 获取部门列表（注册用，公开）
+      tags: [auth]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, default: 10 } }
+        - { name: search, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: 部门分页列表
+
+  /api/settings:
+    get:
+      operationId: getSystemSettings
+      summary: 获取系统设置
+      tags: [settings]
+      responses:
+        '200':
+          description: 系统设置
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/SystemSettings'
+    put:
+      operationId: updateSystemSettings
+      summary: 更新系统设置（HR）
+      tags: [settings]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                allow_registration: { type: boolean }
+      responses:
+        '200':
+          description: 更新成功
+
+  /api/download/exports/{randomKey}:
+    get:
+      operationId: downloadExport
+      summary: 下载导出文件（内部）
+      tags: [export]
+      x-doo-cli: false
+      parameters:
+        - { name: randomKey, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: 文件流
+
+  /api/download/backups/{randomKey}:
+    get:
+      operationId: downloadBackup
+      summary: 下载备份文件（内部）
+      tags: [backup]
+      x-doo-cli: false
+      parameters:
+        - { name: randomKey, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: 文件流
+
+  /api/events/stream:
+    get:
+      operationId: eventsStream
+      summary: SSE 事件流（内部，text/event-stream）
+      tags: [events]
+      x-doo-cli: false
+      description: 通过 URL 参数 token 认证的 Server-Sent Events 流，返回 text/event-stream，不适合 CLI 调用。
+      parameters:
+        - { name: token, in: query, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: 事件流
+          content:
+            text/event-stream:
+              schema: { type: string }
+
+  /api/events/status:
+    get:
+      operationId: getSSEStatus
+      summary: 获取 SSE 连接状态
+      tags: [events]
+      responses:
+        '200':
+          description: 连接状态
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user_id: { type: integer }
+                  is_online: { type: boolean }
+                  user_connection_count: { type: integer }
+                  online_users: { type: integer }
+                  total_connections: { type: integer }
+
+  /api/me:
+    get:
+      operationId: getCurrentUser
+      summary: 获取当前登录用户信息
+      tags: [auth]
+      responses:
+        '200':
+          description: 当前用户
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Employee'
+
+  /api/departments:
+    get:
+      operationId: getDepartments
+      summary: 获取部门列表
+      tags: [departments]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, default: 10 } }
+        - { name: search, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: 部门分页列表
+    post:
+      operationId: createDepartment
+      summary: 创建部门（HR/管理员）
+      tags: [departments]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DepartmentInput'
+      responses:
+        '201':
+          description: 创建成功
+
+  /api/departments/{id}:
+    get:
+      operationId: getDepartment
+      summary: 获取单个部门
+      tags: [departments]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: 部门详情
+    put:
+      operationId: updateDepartment
+      summary: 更新部门（HR/管理员）
+      tags: [departments]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DepartmentInput'
+      responses:
+        '200':
+          description: 更新成功
+    delete:
+      operationId: deleteDepartment
+      summary: 删除部门（HR）
+      tags: [departments]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: 删除成功
+
+  /api/employees:
+    get:
+      operationId: getEmployees
+      summary: 获取员工列表
+      tags: [employees]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, default: 10 } }
+        - { name: search, in: query, schema: { type: string } }
+        - { name: department_id, in: query, schema: { type: integer } }
+        - { name: role, in: query, schema: { type: string, enum: [employee, manager, hr, "manager,hr"] } }
+        - { name: is_active, in: query, schema: { type: boolean } }
+      responses:
+        '200':
+          description: 员工分页列表
+    post:
+      operationId: createEmployee
+      summary: 创建员工（HR/管理员）
+      tags: [employees]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmployeeInput'
+      responses:
+        '201':
+          description: 创建成功
+
+  /api/employees/{id}:
+    get:
+      operationId: getEmployee
+      summary: 获取单个员工
+      tags: [employees]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: 员工详情
+    put:
+      operationId: updateEmployee
+      summary: 更新员工（HR/管理员）
+      tags: [employees]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmployeeInput'
+      responses:
+        '200':
+          description: 更新成功
+    delete:
+      operationId: deleteEmployee
+      summary: 删除员工（HR）
+      tags: [employees]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: 删除成功
+
+  /api/employees/{id}/subordinates:
+    get:
+      operationId: getEmployeeSubordinates
+      summary: 获取员工的下属列表
+      tags: [employees]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: 下属列表
+
+  /api/templates:
+    get:
+      operationId: getTemplates
+      summary: 获取 KPI 模板列表
+      tags: [templates]
+      responses:
+        '200':
+          description: 模板列表
+    post:
+      operationId: createTemplate
+      summary: 创建 KPI 模板（HR/管理员）
+      tags: [templates]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TemplateInput'
+      responses:
+        '201':
+          description: 创建成功
+
+  /api/templates/{id}:
+    get:
+      operationId: getTemplate
+      summary: 获取单个 KPI 模板
+      tags: [templates]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: 模板详情
+    put:
+      operationId: updateTemplate
+      summary: 更新 KPI 模板（HR/管理员）
+      tags: [templates]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TemplateInput'
+      responses:
+        '200':
+          description: 更新成功
+    delete:
+      operationId: deleteTemplate
+      summary: 删除 KPI 模板（HR）
+      tags: [templates]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: 删除成功
+
+  /api/templates/{id}/items:
+    get:
+      operationId: getTemplateItems
+      summary: 获取模板的考核项目
+      tags: [templates]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: 考核项目列表
+
+  /api/performance-rules:
+    get:
+      operationId: getPerformanceRule
+      summary: 获取绩效评分规则（HR）
+      tags: [rules]
+      responses:
+        '200':
+          description: 绩效规则
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PerformanceRule'
+    put:
+      operationId: updatePerformanceRule
+      summary: 更新绩效评分规则（HR）
+      tags: [rules]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PerformanceRulePayload'
+      responses:
+        '200':
+          description: 更新成功
+
+  /api/items:
+    post:
+      operationId: createItem
+      summary: 创建考核项目（HR/管理员）
+      tags: [templates]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ItemInput'
+      responses:
+        '201':
+          description: 创建成功
+
+  /api/items/{id}:
+    get:
+      operationId: getItem
+      summary: 获取单个考核项目
+      tags: [templates]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: 考核项目详情
+    put:
+      operationId: updateItem
+      summary: 更新考核项目（HR/管理员）
+      tags: [templates]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ItemInput'
+      responses:
+        '200':
+          description: 更新成功
+    delete:
+      operationId: deleteItem
+      summary: 删除考核项目（HR）
+      tags: [templates]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: 删除成功
+
+  /api/evaluations:
+    get:
+      operationId: getEvaluations
+      summary: 获取 KPI 评估列表
+      tags: [evaluations]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, default: 10 } }
+        - { name: status, in: query, schema: { type: string, enum: [pending, self_evaluated, manager_evaluated, pending_confirm, completed] } }
+        - { name: employee_id, in: query, schema: { type: integer } }
+        - { name: department_id, in: query, schema: { type: integer } }
+        - { name: manager_id, in: query, schema: { type: integer } }
+        - { name: period, in: query, schema: { type: string } }
+        - { name: year, in: query, schema: { type: integer } }
+        - { name: month, in: query, schema: { type: integer } }
+        - { name: quarter, in: query, schema: { type: integer } }
+      responses:
+        '200':
+          description: 评估分页列表（含统计卡片）
+    post:
+      operationId: createEvaluation
+      summary: 创建 KPI 评估（HR/管理员）
+      tags: [evaluations]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EvaluationInput'
+      responses:
+        '201':
+          description: 创建成功
+
+  /api/evaluations/{id}:
+    get:
+      operationId: getEvaluation
+      summary: 获取单个评估
+      tags: [evaluations]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: 评估详情
+    put:
+      operationId: updateEvaluation
+      summary: 更新评估（含状态推进）
+      tags: [evaluations]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EvaluationInput'
+      responses:
+        '200':
+          description: 更新成功
+    delete:
+      operationId: deleteEvaluation
+      summary: 删除评估（HR）
+      tags: [evaluations]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: 删除成功
+
+  /api/evaluations/employee/{employeeId}:
+    get:
+      operationId: getEmployeeEvaluations
+      summary: 获取指定员工的评估记录
+      tags: [evaluations]
+      parameters:
+        - { name: employeeId, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: 评估列表
+
+  /api/evaluations/pending/{employeeId}:
+    get:
+      operationId: getPendingEvaluations
+      summary: 获取指定员工的待处理评估
+      tags: [evaluations]
+      parameters:
+        - { name: employeeId, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: 待处理评估列表
+
+  /api/evaluations/pending/count:
+    get:
+      operationId: getPendingCountEvaluations
+      summary: 获取当前用户待处理评估数量
+      tags: [evaluations]
+      responses:
+        '200':
+          description: 待处理数量
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count: { type: integer }
+
+  /api/evaluations/{id}/comments:
+    get:
+      operationId: getEvaluationComments
+      summary: 获取评估评论列表
+      tags: [comments]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, default: 10 } }
+      responses:
+        '200':
+          description: 评论分页列表
+    post:
+      operationId: createEvaluationComment
+      summary: 创建评估评论
+      tags: [comments]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties:
+                content: { type: string }
+                is_private: { type: boolean }
+      responses:
+        '201':
+          description: 创建成功
+
+  /api/evaluations/{id}/comments/{comment_id}:
+    put:
+      operationId: updateEvaluationComment
+      summary: 更新评估评论（作者本人）
+      tags: [comments]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: comment_id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties:
+                content: { type: string }
+                is_private: { type: boolean }
+      responses:
+        '200':
+          description: 更新成功
+    delete:
+      operationId: deleteEvaluationComment
+      summary: 删除评估评论（作者本人）
+      tags: [comments]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: comment_id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: 删除成功
+
+  /api/evaluations/{id}/invitations:
+    get:
+      operationId: getEvaluationInvitations
+      summary: 获取评估的邀请列表
+      tags: [invitations]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: 邀请列表
+    post:
+      operationId: createInvitation
+      summary: 发起邀请评分（HR）
+      tags: [invitations]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [invitee_ids]
+              properties:
+                invitee_ids:
+                  type: array
+                  items: { type: integer }
+                message: { type: string }
+      responses:
+        '201':
+          description: 邀请创建成功
+
+  /api/evaluations/{id}/objection:
+    post:
+      operationId: submitObjection
+      summary: 员工提交异议
+      tags: [objections]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string }
+      responses:
+        '200':
+          description: 异议提交成功
+
+  /api/evaluations/{id}/objection/handle:
+    put:
+      operationId: handleObjection
+      summary: HR 处理异议
+      tags: [objections]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [total_score, final_comment]
+              properties:
+                total_score: { type: number }
+                final_comment: { type: string }
+      responses:
+        '200':
+          description: 异议处理成功
+
+  /api/invitations/my:
+    get:
+      operationId: getMyInvitations
+      summary: 获取我收到的邀请列表
+      tags: [invitations]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, default: 10 } }
+        - { name: status, in: query, schema: { type: string, enum: [all, pending, accepted, declined, completed, cancelled] } }
+      responses:
+        '200':
+          description: 邀请分页列表
+
+  /api/invitations/sent:
+    get:
+      operationId: getMySentInvitations
+      summary: 获取我发出的邀请列表
+      tags: [invitations]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, default: 10 } }
+        - { name: status, in: query, schema: { type: string, enum: [all, pending, accepted, declined, completed, cancelled] } }
+      responses:
+        '200':
+          description: 邀请分页列表
+
+  /api/invitations/{id}:
+    get:
+      operationId: getInvitationDetails
+      summary: 获取邀请详情
+      tags: [invitations]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: 邀请详情（含评分项）
+    delete:
+      operationId: deleteInvitation
+      summary: 删除邀请（HR）
+      tags: [invitations]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: 删除成功
+
+  /api/invitations/{id}/accept:
+    put:
+      operationId: acceptInvitation
+      summary: 接受邀请
+      tags: [invitations]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: 接受成功
+
+  /api/invitations/{id}/decline:
+    put:
+      operationId: declineInvitation
+      summary: 拒绝邀请
+      tags: [invitations]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: 拒绝成功
+
+  /api/invitations/{id}/complete:
+    put:
+      operationId: completeInvitation
+      summary: 完成邀请评分
+      tags: [invitations]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: 完成成功
+
+  /api/invitations/{id}/scores:
+    get:
+      operationId: getInvitationScores
+      summary: 获取邀请的评分记录
+      tags: [invitations]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: 评分记录
+
+  /api/invitations/{id}/cancel:
+    put:
+      operationId: cancelInvitation
+      summary: 撤销邀请（HR）
+      tags: [invitations]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: 撤销成功
+
+  /api/invitations/{id}/reinvite:
+    put:
+      operationId: reinviteInvitation
+      summary: 重新邀请（HR）
+      tags: [invitations]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: 重新邀请成功
+
+  /api/invitations/pending/count:
+    get:
+      operationId: getPendingCountInvitations
+      summary: 获取待确认邀请数量
+      tags: [invitations]
+      responses:
+        '200':
+          description: 待确认数量
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count: { type: integer }
+
+  /api/invited-scores/{id}:
+    put:
+      operationId: updateInvitedScore
+      summary: 更新邀请评分项（被邀请人）
+      tags: [invitations]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                score: { type: number, nullable: true }
+                comment: { type: string }
+      responses:
+        '200':
+          description: 更新成功
+
+  /api/scores/evaluation/{evaluationId}:
+    get:
+      operationId: getEvaluationScores
+      summary: 获取评估的评分记录
+      tags: [scores]
+      parameters:
+        - { name: evaluationId, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: 评分记录列表
+
+  /api/scores/{id}/self:
+    put:
+      operationId: updateSelfScore
+      summary: 更新自评分数
+      tags: [scores]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                self_score: { type: number, nullable: true }
+                self_comment: { type: string }
+      responses:
+        '200':
+          description: 更新成功
+
+  /api/scores/{id}/manager:
+    put:
+      operationId: updateManagerScore
+      summary: 更新上级评分（管理员/HR）
+      tags: [scores]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                manager_score: { type: number, nullable: true }
+                manager_comment: { type: string }
+      responses:
+        '200':
+          description: 更新成功
+
+  /api/scores/{id}/hr:
+    put:
+      operationId: updateHRScore
+      summary: 更新 HR 评分（HR）
+      tags: [scores]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                hr_score: { type: number, nullable: true }
+                hr_comment: { type: string }
+      responses:
+        '200':
+          description: 更新成功
+
+  /api/scores/{id}/final:
+    put:
+      operationId: updateFinalScore
+      summary: 更新最终得分（HR）
+      tags: [scores]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                final_score: { type: number, nullable: true }
+                final_comment: { type: string }
+      responses:
+        '200':
+          description: 更新成功
+
+  /api/statistics/dashboard:
+    get:
+      operationId: getDashboardStats
+      summary: 获取仪表盘统计
+      tags: [statistics]
+      parameters:
+        - { name: year, in: query, schema: { type: integer } }
+        - { name: period, in: query, schema: { type: string } }
+        - { name: month, in: query, schema: { type: integer } }
+        - { name: quarter, in: query, schema: { type: integer } }
+      responses:
+        '200':
+          description: 仪表盘统计数据
+
+  /api/statistics/department/{id}:
+    get:
+      operationId: getDepartmentStats
+      summary: 获取部门统计
+      tags: [statistics]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: 部门统计数据
+
+  /api/statistics/employee/{id}:
+    get:
+      operationId: getEmployeeStats
+      summary: 获取员工统计
+      tags: [statistics]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: 员工统计数据
+
+  /api/statistics/trends:
+    get:
+      operationId: getTrends
+      summary: 获取趋势统计
+      tags: [statistics]
+      parameters:
+        - { name: period, in: query, schema: { type: string, default: monthly } }
+      responses:
+        '200':
+          description: 趋势数据
+
+  /api/statistics/data:
+    get:
+      operationId: getStatisticsData
+      summary: 获取统计数据
+      tags: [statistics]
+      parameters:
+        - { name: year, in: query, schema: { type: integer } }
+        - { name: period, in: query, schema: { type: string, default: monthly } }
+        - { name: month, in: query, schema: { type: integer } }
+        - { name: quarter, in: query, schema: { type: integer } }
+      responses:
+        '200':
+          description: 统计数据
+
+  /api/export/evaluation/{id}:
+    get:
+      operationId: exportEvaluationToExcel
+      summary: 导出单个评估为 Excel（HR/管理员）
+      tags: [export]
+      description: 返回 Excel 文件（application/vnd.openxmlformats-officedocument.spreadsheetml.sheet）。
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: Excel 文件
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema: { type: string, format: binary }
+
+  /api/export/department/{id}:
+    get:
+      operationId: exportDepartmentToExcel
+      summary: 导出部门评估为 Excel（HR/管理员）
+      tags: [export]
+      description: 返回 Excel 文件（application/vnd.openxmlformats-officedocument.spreadsheetml.sheet）。
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: Excel 文件
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema: { type: string, format: binary }
+
+  /api/export/period/{period}:
+    get:
+      operationId: exportPeriodToExcel
+      summary: 导出周期评估为 Excel（HR/管理员）
+      tags: [export]
+      description: 返回 Excel 文件（application/vnd.openxmlformats-officedocument.spreadsheetml.sheet）。period 取值如 monthly/quarterly/yearly。
+      parameters:
+        - { name: period, in: path, required: true, schema: { type: string } }
+        - { name: year, in: query, schema: { type: integer } }
+        - { name: month, in: query, schema: { type: integer } }
+        - { name: quarter, in: query, schema: { type: integer } }
+      responses:
+        '200':
+          description: Excel 文件
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema: { type: string, format: binary }
+
+  /api/backup:
+    post:
+      operationId: createBackup
+      summary: 创建数据库备份（内部/危险，HR）
+      tags: [backup]
+      x-doo-cli: false
+      responses:
+        '200':
+          description: 备份结果
+    get:
+      operationId: getBackupHistory
+      summary: 获取备份历史（内部，HR）
+      tags: [backup]
+      x-doo-cli: false
+      responses:
+        '200':
+          description: 备份历史列表
+
+  /api/backup/download/{filename}:
+    get:
+      operationId: generateBackupDownloadURL
+      summary: 生成备份下载链接（内部，HR）
+      tags: [backup]
+      x-doo-cli: false
+      parameters:
+        - { name: filename, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: 下载链接
+
+  /api/backup/restore/{filename}:
+    post:
+      operationId: restoreBackup
+      summary: 恢复数据库（内部/危险，HR）
+      tags: [backup]
+      x-doo-cli: false
+      parameters:
+        - { name: filename, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: 恢复结果
+
+  /api/backup/{filename}:
+    delete:
+      operationId: deleteBackup
+      summary: 删除备份文件（内部/危险，HR）
+      tags: [backup]
+      x-doo-cli: false
+      parameters:
+        - { name: filename, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: 删除结果
+
+components:
+  schemas:
+    UserEventRequest:
+      type: object
+      properties:
+        user_id: { type: integer }
+        email: { type: string }
+        user_name: { type: string }
+        user_role: { type: string }
+
+    SystemSettings:
+      type: object
+      properties:
+        allow_registration: { type: boolean }
+        system_mode: { type: string, enum: [standalone, integrated] }
+
+    DepartmentInput:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        description: { type: string }
+
+    EmployeeInput:
+      type: object
+      properties:
+        name: { type: string }
+        email: { type: string, format: email }
+        position: { type: string }
+        department_id: { type: integer }
+        manager_id: { type: integer, nullable: true }
+        role: { type: string, enum: [employee, manager, hr] }
+        is_active: { type: boolean }
+
+    Employee:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        email: { type: string }
+        position: { type: string }
+        department_id: { type: integer }
+        manager_id: { type: integer, nullable: true }
+        role: { type: string }
+        is_active: { type: boolean }
+
+    TemplateInput:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        description: { type: string }
+        period: { type: string, enum: [monthly, quarterly, yearly] }
+        is_active: { type: boolean }
+
+    ItemInput:
+      type: object
+      required: [name]
+      properties:
+        template_id: { type: integer }
+        name: { type: string }
+        description: { type: string }
+        max_score: { type: number }
+        order: { type: integer }
+
+    EvaluationInput:
+      type: object
+      properties:
+        employee_id: { type: integer }
+        template_id: { type: integer }
+        period: { type: string }
+        year: { type: integer }
+        month: { type: integer, nullable: true }
+        quarter: { type: integer, nullable: true }
+        status: { type: string, enum: [pending, self_evaluated, manager_evaluated, pending_confirm, completed] }
+        total_score: { type: number }
+        final_comment: { type: string }
+        objection_reason: { type: string }
+
+    PerformanceRuleNoInvitation:
+      type: object
+      properties:
+        self_weight: { type: number }
+        superior_weight: { type: number }
+
+    PerformanceRuleEmployee:
+      type: object
+      properties:
+        self_weight: { type: number }
+        invite_superior_weight: { type: number }
+        superior_weight: { type: number }
+
+    PerformanceRuleWithInvite:
+      type: object
+      properties:
+        employee:
+          $ref: '#/components/schemas/PerformanceRuleEmployee'
+
+    PerformanceRule:
+      type: object
+      properties:
+        id: { type: integer }
+        no_invitation:
+          $ref: '#/components/schemas/PerformanceRuleNoInvitation'
+        with_invitation:
+          $ref: '#/components/schemas/PerformanceRuleWithInvite'
+        enabled: { type: boolean }
+
+    PerformanceRulePayload:
+      type: object
+      required: [no_invitation, with_invitation]
+      properties:
+        no_invitation:
+          $ref: '#/components/schemas/PerformanceRuleNoInvitation'
+        with_invitation:
+          $ref: '#/components/schemas/PerformanceRuleWithInvite'
+        enabled: { type: boolean }

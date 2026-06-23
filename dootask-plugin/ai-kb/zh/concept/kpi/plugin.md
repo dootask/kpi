@@ -10,7 +10,7 @@ aliases:
   - kpi 怎么装
   - 绩效插件
   - 绩效考核插件
-  - community_kuaifan_kpi
+  - kpi 应用 id
 related_tools: []
 related_pages: [application]
 prerequisites: []
@@ -24,7 +24,7 @@ last_verified: v1.7.90
 # KPI 插件元信息
 
 ## 定义
-KPI 绩效考核在 DooTask 中由社区插件提供，应用市场 app id 为 `community_kuaifan_kpi`（当前版本 0.1.9），feature 短名 `kpi`。主程序不内置任何 KPI 代码，所有绩效逻辑都跑在独立 Docker 容器中，作为应用插件挂载到 DooTask 界面。
+KPI 绩效考核在 DooTask 中由社区插件提供，应用市场 app id 为 `kpi`，feature 短名 `kpi`。主程序不内置任何 KPI 代码，所有绩效逻辑都跑在独立 Docker 容器中，作为应用插件挂载到 DooTask 界面。版本号随应用市场发布的版本走，不固定。
 
 ## 关键属性
 - **作者**：DooTask 官方
@@ -34,18 +34,22 @@ KPI 绩效考核在 DooTask 中由社区插件提供，应用市场 app id 为 `
 - **菜单注入**：安装后在「应用中心」注册「绩效考核」入口
 - **重启策略**：`unless-stopped`，主机重启容器自动恢复
 
-## 用户生命周期钩子
-插件订阅了 DooTask 的用户事件，自动维护 KPI 内部用户：
+## 账号创建与角色分配（首次登录时）
+KPI 账号在用户**首次进入插件（用 DooTask 令牌登录）时**自动建立并分配角色：
 
-- `user_onboard`：DooTask 创建用户时，自动在 KPI 内建号
-  - 部门不存在则自动创建该部门
-  - DooTask 管理员自动设为 HR 角色
-  - 部门负责人自动设为 manager 角色
-  - 其余设为 employee 角色
-- `user_offboard`：DooTask 删除用户时，KPI 同步清理
+- 部门不存在则自动创建该部门
+- DooTask 管理员 → KPI 内部 hr 角色
+- 部门负责人 → KPI 内部 manager 角色
+- 其余 → employee 角色
+
+## 用户生命周期钩子
+插件订阅了 DooTask 的用户事件，但只做在职状态同步，不在此建号：
+
+- `user_onboard`：DooTask 重新启用某用户时，把 KPI 中**已存在**的对应账号标记为在职；KPI 中尚无此人时不处理（建号仍发生在首次登录）
+- `user_offboard`：DooTask 删除 / 离职用户时，KPI 同步把对应账号标记为离职
 
 ## 信息同步规则
-用户登录 KPI 时：
+用户每次登录 KPI 时：
 
 - 自动更新姓名、职位
 - **角色保持不变**（不会因为 DooTask 角色变化而重新分配 KPI 角色）

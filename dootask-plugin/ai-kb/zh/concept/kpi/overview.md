@@ -26,7 +26,7 @@ last_verified: v1.7.90
 # KPI 绩效考核是什么
 
 ## 定义
-KPI（Key Performance Indicator，关键绩效指标）在 DooTask 中由独立插件 `community_kuaifan_kpi` 提供，是面向企业和组织的现代化绩效考核管理系统。它支持创建考核任务、按模板录入指标评分、邀请同事评分、HR 审核与异议处理，让多角色协作完成员工绩效评估。
+KPI（Key Performance Indicator，关键绩效指标）在 DooTask 中由独立插件（应用市场 app id `kpi`）提供，是面向企业和组织的现代化绩效考核管理系统。它支持创建考核任务、按模板录入指标评分、邀请同事评分、HR 审核与异议处理，让多角色协作完成员工绩效评估。
 
 ## 在 DooTask 中的形态
 - 通过应用市场安装的社区插件（基于 Next.js + Go）
