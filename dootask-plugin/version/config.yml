@@ -4,7 +4,7 @@ menu_items:
       en: KPI
       zh: 绩效考核
     url: "apps/kpi?theme={system_theme}"
-    type: iframe
+    url_type: iframe
     immersive: true
 require_version:
   version: "> 1.4.67"
